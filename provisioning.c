@@ -215,6 +215,7 @@ uint8_t  gWaitForConn = 0;
 LedState gLedDisplayState = LedState_CONNECTION;
 
 timer_t gTimer;
+volatile bool forget = false;
 
 const char *Roles[] = {"STA","STA","AP","P2P"};
 const char *WlanStatus[] = {"DISCONNECTED","SCANING","CONNECTING","CONNECTED"};
@@ -426,107 +427,106 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 
     switch(pWlanEvent->Id)
     {
-    case SL_WLAN_EVENT_CONNECT:
-        LOG_MESSAGE(
-            " [Event] STA connected to AP "
-            "- BSSID:%.2x:%.2x:%.2x:%.2x:%.2x:%.2x, ",
-            pWlanEvent->Data.Connect.Bssid[0],
-            pWlanEvent->Data.Connect.Bssid[1],
-            pWlanEvent->Data.Connect.Bssid[2],
-            pWlanEvent->Data.Connect.Bssid[3],
-            pWlanEvent->Data.Connect.Bssid[4],
-            pWlanEvent->Data.Connect.Bssid[5]);
+        case SL_WLAN_EVENT_CONNECT:
+            LOG_MESSAGE(
+                " [Event] STA connected to AP "
+                "- BSSID:%.2x:%.2x:%.2x:%.2x:%.2x:%.2x, ",
+                pWlanEvent->Data.Connect.Bssid[0],
+                pWlanEvent->Data.Connect.Bssid[1],
+                pWlanEvent->Data.Connect.Bssid[2],
+                pWlanEvent->Data.Connect.Bssid[3],
+                pWlanEvent->Data.Connect.Bssid[4],
+                pWlanEvent->Data.Connect.Bssid[5]);
 
-        /* set the string terminate */
-        pWlanEvent->Data.Connect.SsidName[pWlanEvent->Data.Connect.SsidLen] =
-            '\0';
+            /* set the string terminate */
+            pWlanEvent->Data.Connect.SsidName[pWlanEvent->Data.Connect.SsidLen] =
+                '\0';
 
-        LOG_MESSAGE("SSID:%s\r\n", pWlanEvent->Data.Connect.SsidName);
-        SignalEvent(AppEvent_CONNECTED);
-        break;
+            LOG_MESSAGE("SSID:%s\r\n", pWlanEvent->Data.Connect.SsidName);
+            SignalEvent(AppEvent_CONNECTED);
+            break;
 
-    case SL_WLAN_EVENT_DISCONNECT:
-        LOG_MESSAGE(" [Event] STA disconnected from AP (Reason Code = %d)\r\n",
-                    pWlanEvent->Data.Disconnect.ReasonCode);
-        SignalEvent(AppEvent_DISCONNECT);
-        break;
+        case SL_WLAN_EVENT_DISCONNECT:
+            LOG_MESSAGE(" [Event] STA disconnected from AP (Reason Code = %d)\r\n",
+                        pWlanEvent->Data.Disconnect.ReasonCode);
+            SignalEvent(AppEvent_DISCONNECT);
+            break;
 
-    case SL_WLAN_EVENT_STA_ADDED:
-        LOG_MESSAGE(
-            " [Event] New STA Addeed (MAC Address:"
-            " %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
-            pWlanEvent->Data.STAAdded.Mac[0],
-            pWlanEvent->Data.STAAdded.Mac[1],
-            pWlanEvent->Data.STAAdded.Mac[2],
-            pWlanEvent->Data.STAAdded.Mac[3],
-            pWlanEvent->Data.STAAdded.Mac[4],
-            pWlanEvent->Data.STAAdded.Mac[5]);
-        break;
+        case SL_WLAN_EVENT_STA_ADDED:
+            LOG_MESSAGE(
+                " [Event] New STA Addeed (MAC Address:"
+                " %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
+                pWlanEvent->Data.STAAdded.Mac[0],
+                pWlanEvent->Data.STAAdded.Mac[1],
+                pWlanEvent->Data.STAAdded.Mac[2],
+                pWlanEvent->Data.STAAdded.Mac[3],
+                pWlanEvent->Data.STAAdded.Mac[4],
+                pWlanEvent->Data.STAAdded.Mac[5]);
+            break;
 
-    case SL_WLAN_EVENT_STA_REMOVED:
-        LOG_MESSAGE(
-            " [Event] STA Removed (MAC Address: %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
-            pWlanEvent->Data.STAAdded.Mac[0],
-            pWlanEvent->Data.STAAdded.Mac[1],
-            pWlanEvent->Data.STAAdded.Mac[2],
-            pWlanEvent->Data.STAAdded.Mac[3],
-            pWlanEvent->Data.STAAdded.Mac[4],
-            pWlanEvent->Data.STAAdded.Mac[5]);
-        break;
+        case SL_WLAN_EVENT_STA_REMOVED:
+            LOG_MESSAGE(
+                " [Event] STA Removed (MAC Address: %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
+                pWlanEvent->Data.STAAdded.Mac[0],
+                pWlanEvent->Data.STAAdded.Mac[1],
+                pWlanEvent->Data.STAAdded.Mac[2],
+                pWlanEvent->Data.STAAdded.Mac[3],
+                pWlanEvent->Data.STAAdded.Mac[4],
+                pWlanEvent->Data.STAAdded.Mac[5]);
+            break;
 
-    case SL_WLAN_EVENT_PROVISIONING_PROFILE_ADDED:
-        LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s\r\n",
-                    pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
-        if(pWlanEvent->Data.ProvisioningProfileAdded.ReservedLen > 0)
+        case SL_WLAN_EVENT_PROVISIONING_PROFILE_ADDED:
+            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s\r\n",
+                        pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
+            if(pWlanEvent->Data.ProvisioningProfileAdded.ReservedLen > 0)
+            {
+                LOG_MESSAGE(" [Provisioning] Profile Added: PrivateToken:%s\r\n",
+                            pWlanEvent->Data.ProvisioningProfileAdded.Reserved);
+            }
+            break;
+
+        case SL_WLAN_EVENT_PROVISIONING_STATUS:
         {
-            LOG_MESSAGE(" [Provisioning] Profile Added: PrivateToken:%s\r\n",
-                        pWlanEvent->Data.ProvisioningProfileAdded.Reserved);
-        }
-        break;
+            switch(pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus)
+            {
+            case SL_WLAN_PROVISIONING_GENERAL_ERROR:
+            case SL_WLAN_PROVISIONING_ERROR_ABORT:
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_INVALID_PARAM:
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_HTTP_SERVER_DISABLED:
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROFILE_LIST_FULL:
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROVISIONING_ALREADY_STARTED:
+                LOG_MESSAGE(" [Provisioning] Provisioning Error status=%d\r\n",
+                            pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+                SignalEvent(AppEvent_ERROR);
+                break;
 
-    case SL_WLAN_EVENT_PROVISIONING_STATUS:
-    {
-        switch(pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus)
-        {
-        case SL_WLAN_PROVISIONING_GENERAL_ERROR:
-        case SL_WLAN_PROVISIONING_ERROR_ABORT:
-        case SL_WLAN_PROVISIONING_ERROR_ABORT_INVALID_PARAM:
-        case SL_WLAN_PROVISIONING_ERROR_ABORT_HTTP_SERVER_DISABLED:
-        case SL_WLAN_PROVISIONING_ERROR_ABORT_PROFILE_LIST_FULL:
-        case SL_WLAN_PROVISIONING_ERROR_ABORT_PROVISIONING_ALREADY_STARTED:
-            LOG_MESSAGE(" [Provisioning] Provisioning Error status=%d\r\n",
-                        pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
-            SignalEvent(AppEvent_ERROR);
-            break;
+            case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_NETWORK_NOT_FOUND:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile confirmation failed: "
+                    "network not found\r\n");
+                SignalEvent(AppEvent_PROVISIONING_STARTED);
+                break;
 
-        case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_NETWORK_NOT_FOUND:
-            LOG_MESSAGE(
-                " [Provisioning] Profile confirmation failed: "
-                "network not found\r\n");
-            SignalEvent(AppEvent_PROVISIONING_STARTED);
-            break;
+            case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_CONNECTION_FAILED:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile confirmation failed:"
+                    " Connection failed\r\n");
+                SignalEvent(AppEvent_PROVISIONING_STARTED);
+                break;
 
-        case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_CONNECTION_FAILED:
-            LOG_MESSAGE(
-                " [Provisioning] Profile confirmation failed:"
-                " Connection failed\r\n");
-            SignalEvent(AppEvent_PROVISIONING_STARTED);
-            break;
+            case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_CONNECTION_SUCCESS_IP_NOT_ACQUIRED:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile confirmation failed:"
+                    " IP address not acquired\r\n");
+                SignalEvent(AppEvent_PROVISIONING_STARTED);
+                break;
 
-        case
-            SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_CONNECTION_SUCCESS_IP_NOT_ACQUIRED:
-            LOG_MESSAGE(
-                " [Provisioning] Profile confirmation failed:"
-                " IP address not acquired\r\n");
-            SignalEvent(AppEvent_PROVISIONING_STARTED);
-            break;
-
-        case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS_FEEDBACK_FAILED:
-            LOG_MESSAGE(
-                " [Provisioning] Profile Confirmation failed "
-                "(Connection Success, feedback to Smartphone app failed)\r\n");
-            SignalEvent(AppEvent_PROVISIONING_STARTED);
-            break;
+            case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS_FEEDBACK_FAILED:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile Confirmation failed "
+                    "(Connection Success, feedback to Smartphone app failed)\r\n");
+                SignalEvent(AppEvent_PROVISIONING_STARTED);
+                break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS:
                 LOG_MESSAGE(" [Provisioning] Profile Confirmation Success!\r\n");
@@ -538,30 +538,30 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 SignalEvent(AppEvent_RESTART);
                 break;
 
-        case SL_WLAN_PROVISIONING_STOPPED:
-            LOG_MESSAGE("\r\n Provisioning stopped:");
-            LOG_MESSAGE(" Current Role: %s\r\n",
-                        Roles[pWlanEvent->Data.ProvisioningStatus.Role]);
-            if(ROLE_STA == pWlanEvent->Data.ProvisioningStatus.Role)
-            {
-                LOG_MESSAGE("WLAN Status: %s\r\n",
-                            WlanStatus[pWlanEvent->Data.ProvisioningStatus.
-                                       WlanStatus]);
+            case SL_WLAN_PROVISIONING_STOPPED:
+                LOG_MESSAGE("\r\n Provisioning stopped:");
+                LOG_MESSAGE(" Current Role: %s\r\n",
+                            Roles[pWlanEvent->Data.ProvisioningStatus.Role]);
+                if(ROLE_STA == pWlanEvent->Data.ProvisioningStatus.Role)
+                {
+                    LOG_MESSAGE("WLAN Status: %s\r\n",
+                                WlanStatus[pWlanEvent->Data.ProvisioningStatus.
+                                           WlanStatus]);
 
-                if(SL_WLAN_STATUS_CONNECTED ==
-                   pWlanEvent->Data.ProvisioningStatus.WlanStatus)
-                {
-                    LOG_MESSAGE("Connected to SSID: %s\r\n",
-                                pWlanEvent->Data.ProvisioningStatus.Ssid);
-                    SignalEvent(AppEvent_PROVISIONING_STOPPED);
+                    if(SL_WLAN_STATUS_CONNECTED ==
+                       pWlanEvent->Data.ProvisioningStatus.WlanStatus)
+                    {
+                        LOG_MESSAGE("Connected to SSID: %s\r\n",
+                                    pWlanEvent->Data.ProvisioningStatus.Ssid);
+                        SignalEvent(AppEvent_PROVISIONING_STOPPED);
+                    }
+                    else if(SL_WLAN_STATUS_SCANING ==
+                            pWlanEvent->Data.ProvisioningStatus.WlanStatus)
+                    {
+                        gWaitForConn = 1;
+                        SignalEvent(AppEvent_PROVISIONING_WAIT_CONN);
+                    }
                 }
-                else if(SL_WLAN_STATUS_SCANING ==
-                        pWlanEvent->Data.ProvisioningStatus.WlanStatus)
-                {
-                    gWaitForConn = 1;
-                    SignalEvent(AppEvent_PROVISIONING_WAIT_CONN);
-                }
-            }
                 else
                 {
                     /* [External configuration]: In case external configuration is currently active and PROVISIONING STOP event arrived,
@@ -574,7 +574,6 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                     {
                         SignalEvent(AppEvent_RESTART);
                     }
-
                 }
                 break;
 
@@ -586,39 +585,39 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 LOG_MESSAGE(" [Provisioning] Smart Config Sync Timeout!\r\n");
                 break;
 
-        case SL_WLAN_PROVISIONING_CONFIRMATION_WLAN_CONNECT:
-            LOG_MESSAGE(
-                " [Provisioning] Profile confirmation: WLAN Connected!\r\n");
-            break;
-
-        case SL_WLAN_PROVISIONING_CONFIRMATION_IP_ACQUIRED:
-            LOG_MESSAGE(
-                " [Provisioning] Profile confirmation: IP Acquired!\r\n");
-            break;
-
-            case SL_WLAN_PROVISIONING_EXTERNAL_CONFIGURATION_READY:
-                LOG_MESSAGE(" [Provisioning] External "
-				"configuration is ready! \r\n");
-                /* [External configuration]: External configuration is ready,
-		start the external configuration process.
-                In case of using the external provisioning
-		enable the function below which will trigger StartExternalProvisioning() */
-		/* SignalEvent(AppEvent_STARTED); */
+            case SL_WLAN_PROVISIONING_CONFIRMATION_WLAN_CONNECT:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile confirmation: WLAN Connected!\r\n");
                 break;
 
-            default:
-                LOG_MESSAGE(" [Provisioning] "
-				"Unknown Provisioning Status: %d\r\n",
-				pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_CONFIRMATION_IP_ACQUIRED:
+                LOG_MESSAGE(
+                    " [Provisioning] Profile confirmation: IP Acquired!\r\n");
                 break;
-            }
+
+                case SL_WLAN_PROVISIONING_EXTERNAL_CONFIGURATION_READY:
+                    LOG_MESSAGE(" [Provisioning] External "
+                                    "configuration is ready! \r\n");
+                    /* [External configuration]: External configuration is ready,
+                    start the external configuration process.
+                    In case of using the external provisioning
+                    enable the function below which will trigger StartExternalProvisioning() */
+                    /* SignalEvent(AppEvent_STARTED); */
+                    break;
+
+                default:
+                    LOG_MESSAGE(" [Provisioning] "
+                                    "Unknown Provisioning Status: %d\r\n",
+                                    pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+                    break;
+                }
         }
         break;
 
-    default:
-        LOG_MESSAGE(" [Event] - WlanEventHandler has received %d !!!!\r\n",
-		pWlanEvent->Id);
-        break;
+        default:
+            LOG_MESSAGE(" [Event] - WlanEventHandler has received %d !!!!\r\n",
+                    pWlanEvent->Id);
+            break;
     }
 }
 
@@ -956,6 +955,7 @@ void * UpdateLedDisplay(void *arg)
 void AsyncEvtTimerHandler(sigval arg)
 {
     SignalEvent(AppEvent_TIMEOUT);
+    LOG_MESSAGE(" [Event] - Async event timer handler has received %x !!!!\r\n", arg);
 }
 
 //*****************************************************************************
@@ -1221,7 +1221,7 @@ int32_t SendPingToGW(void)
     pingCommand.PingSize = 150;           
 
 /* delay between pings, in milliseconds     */    
-    pingCommand.PingIntervalTime = 100;    
+    pingCommand.PingIntervalTime = 30000;    
 
 /* timeout for every ping in milliseconds   */    
     pingCommand.PingRequestTimeout = 1000; 
@@ -1359,6 +1359,12 @@ int32_t HandleDiscnctEvt(void)
 //*****************************************************************************
 int32_t CheckLanConnection(void)
 {
+    if (forget ) { //&& !gWaitForConn) {
+        LOG_MESSAGE("[App] Force Provisioning Start\r\n");
+        returnToFactoryDefault();
+        SignalEvent(AppEvent_PROVISIONING_STARTED);
+        forget = false;
+    }
     /* Force Provisioning Application to run */
     if ((FORCE_PROVISIONING)&&(!gWaitForConn))
     {
@@ -1387,6 +1393,7 @@ int32_t CheckLanConnection(void)
 int32_t CheckInternetConnection(void)
 {
     /* Connect to cloud if enabled */
+    
     return(0);
 }
 
@@ -1722,7 +1729,8 @@ int32_t ProvisioningStart(void)
             sl_WlanProvisioning(provisioningCmd, ROLE_STA,
                                 PROVISIONING_INACTIVITY_TIMEOUT,
                                 NULL,
-                                (uint32_t)NULL);
+                                SL_WLAN_PROVISIONING_CMD_FLAG_EXTERNAL_CONFIRMATION);
+                                //(uint32_t)NULL);
     }
     if(retVal < 0)
     {
@@ -1837,6 +1845,29 @@ static void DisplayBanner(char * AppName)
     LOG_MESSAGE("\n\n\n\r");
 }
 
+/*!
+    \brief          GPIO button function callback
+
+    This routine gets called whenever board button (SW3 for CC32xx
+    or S2 for MSP-432) gets pressed. It posts the sleep semaphore,
+    in order to wake the device from LPDS.
+
+    \param          index    -   Contains the board GPIO index who
+                                 triggered this function.
+
+    \return         void
+
+    \sa             cmdEnableWoWLANCallback
+
+*/
+void gpioButtonFxn0(uint8_t index)
+{
+    LOG_MESSAGE("\n\rGPIO button SW2 pressed .. \n\r");
+    forget = true;
+    SignalEvent(AppEvent_RESTART);
+    return;
+}
+
 //*****************************************************************************
 //
 //! \brief  Main application thread
@@ -1865,6 +1896,10 @@ void * mainThread( void *arg )
     GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_OFF);
     GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_OFF);
     GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_OFF);
+    /* install Button callback  SW2 on CC3220S Launchpad */
+    GPIO_setCallback(Board_GPIO_BUTTON0, gpioButtonFxn0);
+    /* Enable interrupts */
+    GPIO_enableInt(Board_GPIO_BUTTON0);
 
     /* create the sl_Task */
     pthread_attr_init(&pAttrs_spawn);
