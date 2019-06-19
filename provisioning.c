@@ -66,6 +66,7 @@
 #include "mqueue.h"
 #include <time.h>
 #include "external_provisioning_conf.h"
+#include "socket_cmd.h"
 
 /* Application Version and Naming*/
 #define APPLICATION_NAME         "PROVISIONING"
@@ -73,7 +74,7 @@
 
 /* USER's defines */
 #define SPAWN_TASK_PRIORITY                     (9)
-#define TASK_STACK_SIZE                         (2048)
+#define TASK_STACK_SIZE                         (4096)
 #define TIMER_TASK_STACK_SIZE                   (1024)
 #define DISPLAY_TASK_STACK_SIZE                 (512)
 #define SL_STOP_TIMEOUT                         (200)
@@ -97,18 +98,19 @@
 #define AP_SEC_TYPE         (SL_WLAN_SEC_TYPE_WPA_WPA2)
 #define AP_SEC_PASSWORD     "1234567890"
 #define SC_KEY              "1234567890123456"
+#define DEST_IP_ADDR                SL_IPV4_VAL(192,168,1,100)
 
 /* For Debug - Start Provisioning for each reset, or stay connected */
 /* Used mainly in case of provisioning robustness tests             */
 #define FORCE_PROVISIONING   (0)
 
-#define ASSERT_ON_ERROR(error_code) \
-            {\
-            /* Handling the error-codes is specific to the application */ \
+/*#define ASSERT_ON_ERROR(error_code) \
+            {\*/
+            /* Handling the error-codes is specific to the application */ /* \
             if (error_code < 0) {LOG_MESSAGE("ERROR! %d \n\r",error_code); \
-            gLedDisplayState = LedState_ERROR; } \
-            /* else, continue w/ execution */ \
-            }\
+            gLedDisplayState = LedState_ERROR; } \*/
+            /* else, continue w/ execution */ /*\
+            }\*/
 
 #define ROLE_STA 0
 #define ROLE_AP  2
@@ -163,6 +165,8 @@ typedef struct _Provisioning_TableEntry_t_
     AppState            nextState;  /* Next state of the application */
 }Provisioning_TableEntry_t;
 
+appControlBlock     app_CB;
+
 /* LED State */
 typedef enum
 {
@@ -192,6 +196,7 @@ int32_t StartConnection(void);
 int16_t SignalEvent(AppEvent event);
 int32_t returnToFactoryDefault(void);
 void    StopAsyncEvtTimer(void);
+int32_t wlanConnect(void);
 
 /****************************************************************************
                       GLOBAL VARIABLES
@@ -216,6 +221,7 @@ LedState gLedDisplayState = LedState_CONNECTION;
 
 timer_t gTimer;
 volatile bool forget = false;
+bool once = false;
 
 const char *Roles[] = {"STA","STA","AP","P2P"};
 const char *WlanStatus[] = {"DISCONNECTED","SCANING","CONNECTING","CONNECTED"};
@@ -424,7 +430,6 @@ AppState g_CurrentState;
 //*****************************************************************************
 void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 {
-
     switch(pWlanEvent->Id)
     {
         case SL_WLAN_EVENT_CONNECT:
@@ -476,8 +481,11 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             break;
 
         case SL_WLAN_EVENT_PROVISIONING_PROFILE_ADDED:
-            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s\r\n",
-                        pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
+            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s sizeof: %d strlen: %d\r\n", pWlanEvent->Data.ProvisioningProfileAdded.Ssid, sizeof(pWlanEvent->Data.ProvisioningProfileAdded.Ssid), strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
+            free(ssidName);
+            ssidName = malloc(strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
+            strcpy(ssidName, pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
+            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s - %d - %d \r\n", ssidName, strlen(ssidName), sizeof(ssidName));
             if(pWlanEvent->Data.ProvisioningProfileAdded.ReservedLen > 0)
             {
                 LOG_MESSAGE(" [Provisioning] Profile Added: PrivateToken:%s\r\n",
@@ -529,7 +537,7 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS:
-                LOG_MESSAGE(" [Provisioning] Profile Confirmation Success!\r\n");
+                LOG_MESSAGE(" [Provisioning] Profile Confirmation Success! ProvisioningStatus=%d, WlanStatus=%d \r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                 SignalEvent(AppEvent_PROVISIONING_SUCCESS);
                 break;
 
@@ -558,6 +566,7 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                     else if(SL_WLAN_STATUS_SCANING ==
                             pWlanEvent->Data.ProvisioningStatus.WlanStatus)
                     {
+                        LOG_MESSAGE("Scaning: %s\r\n", pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                         gWaitForConn = 1;
                         SignalEvent(AppEvent_PROVISIONING_WAIT_CONN);
                     }
@@ -587,7 +596,7 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_WLAN_CONNECT:
                 LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation: WLAN Connected!\r\n");
+                    " [Provisioning] Profile confirmation: WLAN Connected! ProvisioningStatus=%d, WlanStatus=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_IP_ACQUIRED:
@@ -632,7 +641,6 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 //*****************************************************************************
 void SimpleLinkFatalErrorEventHandler(SlDeviceFatal_t *slFatalErrorEvent)
 {
-
     switch (slFatalErrorEvent->Id)
     {
     case SL_DEVICE_EVENT_FATAL_DEVICE_ABORT:
@@ -745,6 +753,7 @@ void SimpleLinkHttpServerEventHandler(
     pHttpResponse)
 {
     /* Unused in this application */
+    LOG_MESSAGE("[HttpServerEvent]: ");
 }
 
 //*****************************************************************************
@@ -1160,6 +1169,7 @@ int32_t HandleConnection(void)
 {
     gIsWlanConnected = 1;
 
+    LOG_MESSAGE(" [App] HandleConnection %d \n\r", g_CurrentState);
     return(0);
 }
 
@@ -1177,8 +1187,7 @@ int32_t HandleProvisioningComplete(void)
 {
     gStopInProgress = 0;
     gIsWlanConnected = 1;
-    LOG_MESSAGE("[Provisioning] "
-	"Provisioning Application Ended Successfully \r\n ");
+    LOG_MESSAGE(" [Provisioning] Provisioning Application Ended Successfully current=%d \r\n ", g_CurrentState);
 
     /* [External configuration] - 
 	Stop the external provisioning process (if running) */
@@ -1188,6 +1197,29 @@ int32_t HandleProvisioningComplete(void)
     }
 
     StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);
+
+    if(!once) {
+        LOG_MESSAGE(" [TCPClient] Sending confo current=%d  \r\n", g_CurrentState);
+        //int32_t             status = 0;
+        //status = wlanConnect();
+        //if (status < 0) {
+        //    LOG_MESSAGE("\r\n wlanConnect error \r\n");
+        //}
+        //LOG_MESSAGE(" [TCPClient] Sending confo status=%d \r\n", status);
+        int32_t ret = 0;
+        ip_t dest;
+        //memset(&dest, 0x0, sizeof(dest));
+        dest.ipv4 = DEST_IP_ADDR;
+        uint8_t nb = 1; // doesn't seem to make a difference.
+        int16_t port = 38979;
+        uint32_t numPackets = 1;
+        ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
+        if (ret != 0) {
+            LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
+            //Display_printf(display, 0, 0, "TCPClient failed");
+        }
+        once=true;
+    }
 
     return(0);
 }
@@ -1204,6 +1236,7 @@ int32_t HandleProvisioningComplete(void)
 //*****************************************************************************
 int32_t SendPingToGW(void)
 {
+    LOG_MESSAGE("[App] SendingPingtoGW \r\n %d", g_CurrentState);
     /* Get IP and Gateway information */
     uint16_t len = sizeof(SlNetCfgIpV4Args_t);
     uint16_t ConfigOpt = 0;   /* return value could be one of the following: 
@@ -1271,7 +1304,7 @@ int32_t SendPingToGW(void)
 //*****************************************************************************
 int32_t HandleUserApplication(void)
 {
-    LOG_MESSAGE("[App] User Application Started \r\n ");
+    LOG_MESSAGE("[App] User Application Started %d \r\n ", g_CurrentState);
     gIsWlanConnected = 1;
     gWaitForConn = 0;
     /* as long as the device connected, run user application */
@@ -1326,6 +1359,7 @@ int32_t HandleUserApplication(void)
 //*****************************************************************************
 int32_t HandleWaitForIp(void)
 {
+    LOG_MESSAGE("[Provisioning] HandleWaitForIp: %d \n\r", g_CurrentState);
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC * 3);
     return(0);
 }
@@ -1359,11 +1393,13 @@ int32_t HandleDiscnctEvt(void)
 //*****************************************************************************
 int32_t CheckLanConnection(void)
 {
+    LOG_MESSAGE("[App] CheckLanConnection %d \r\n", g_CurrentState);
     if (forget ) { //&& !gWaitForConn) {
         LOG_MESSAGE("[App] Force Provisioning Start\r\n");
         returnToFactoryDefault();
         SignalEvent(AppEvent_PROVISIONING_STARTED);
         forget = false;
+        return(0);
     }
     /* Force Provisioning Application to run */
     if ((FORCE_PROVISIONING)&&(!gWaitForConn))
@@ -1374,6 +1410,7 @@ int32_t CheckLanConnection(void)
     }
     else
     {
+
         /* Handle User application */
         SignalEvent(AppEvent_PROVISIONING_STOPPED);
     }
@@ -1392,6 +1429,7 @@ int32_t CheckLanConnection(void)
 //*****************************************************************************
 int32_t CheckInternetConnection(void)
 {
+    LOG_MESSAGE(" [Provisioning] CheckInternetConnection \n\r");
     /* Connect to cloud if enabled */
     
     return(0);
@@ -1408,6 +1446,7 @@ int32_t CheckInternetConnection(void)
 //*****************************************************************************
 int32_t DoNothing(void)
 {
+    LOG_MESSAGE("[Provisioning] DoNothing: %d \n\r", g_CurrentState);
     return(0);
 }
 
@@ -1866,6 +1905,37 @@ void gpioButtonFxn0(uint8_t index)
     forget = true;
     SignalEvent(AppEvent_RESTART);
     return;
+}
+
+int32_t wlanConnect(void)
+{
+    SlWlanSecParams_t secParams = {0};
+    int32_t status = 0;
+
+    secParams.Key = (signed char*)AP_SEC_PASSWORD;
+    secParams.KeyLen = strlen(AP_SEC_PASSWORD);
+    secParams.Type = AP_SEC_TYPE;
+
+    status = sl_WlanConnect((signed char*)ssidName, strlen(
+                                ssidName), 0, &secParams, 0);
+    ASSERT_ON_ERROR(status);
+    
+    //Display_printf(display, 0, 0, "Trying to connect to AP : %s\n\r", SSID_NAME);
+
+    // Wait for WLAN Event
+    /*while((!IS_CONNECTED(PowerMeasure_CB.slStatus)) ||
+          (!IS_IP_ACQUIRED(PowerMeasure_CB.slStatus)))
+    { 
+        // Turn on user LED 
+        GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_ON);
+        usleep(50000);
+        // Turn off user LED 
+        GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_OFF);
+        usleep(50000);
+    }*/
+
+    return(0);
+   
 }
 
 //*****************************************************************************
