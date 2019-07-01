@@ -1219,6 +1219,13 @@ int32_t HandleProvisioningComplete(void)
             //Display_printf(display, 0, 0, "TCPClient failed");
         }
         once=true;
+
+        //port = 38981;
+        //ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
+        /*if (ret != 0) {
+            LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
+            //Display_printf(display, 0, 0, "TCPClient failed");
+        }*/
     }
 
     return(0);
@@ -1236,7 +1243,7 @@ int32_t HandleProvisioningComplete(void)
 //*****************************************************************************
 int32_t SendPingToGW(void)
 {
-    LOG_MESSAGE("[App] SendingPingtoGW \r\n %d", g_CurrentState);
+    LOG_MESSAGE("[App] SendingPingtoGW %d \r\n", g_CurrentState);
     /* Get IP and Gateway information */
     uint16_t len = sizeof(SlNetCfgIpV4Args_t);
     uint16_t ConfigOpt = 0;   /* return value could be one of the following: 
@@ -1286,6 +1293,23 @@ int32_t SendPingToGW(void)
         (report.PacketsSent ==
          report.PacketsReceived) ? report.MinRoundTime : 0,
         gPingSuccess, gPingSent);
+    
+    // stop ping process
+    pingCommand.Ip = 0; 
+    sl_NetAppPing( &pingCommand, SL_AF_INET, &report, NULL );
+
+    int32_t ret = 0;
+    ip_t dest;
+    //memset(&dest, 0x0, sizeof(dest));
+    dest.ipv4 = DEST_IP_ADDR;
+    uint8_t nb = 1; // doesn't seem to make a difference.
+    int16_t port = 38981;
+    uint32_t numPackets = 1;
+    ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
+    if (ret != 0) {
+        LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
+        //Display_printf(display, 0, 0, "TCPClient failed");
+    }
 
     StartAsyncEvtTimer(PING_TIMEOUT_SEC);
 
@@ -1399,6 +1423,7 @@ int32_t CheckLanConnection(void)
         returnToFactoryDefault();
         SignalEvent(AppEvent_PROVISIONING_STARTED);
         forget = false;
+        once = false;
         return(0);
     }
     /* Force Provisioning Application to run */

@@ -47,6 +47,7 @@ int32_t TCPClientTest(uint8_t nb,
                   uint32_t numberOfPackets,
                   uint8_t tx);
 
+int hashf(unsigned char *str); 
 
 /*!
     \brief          TCP Client.
@@ -126,22 +127,52 @@ int32_t TCPClient(uint8_t nb,
     //strcpy(deviceName, my_device_name);
     UART_PRINT("\r 1:%s 2:%s \r\n", myDeviceName, ssidName);
     //free(my_device_name);
+    
+    // calculate hash of 1st 4 of myDeviceName and 1st 3 of SSID
+    char dn[5];
+    char ss[4];
+    _u8 *ch = malloc(9);
+
+    strncpy(dn, myDeviceName, sizeof(dn));
+    dn[4] = '\0';
+    UART_PRINT("\r dn : %s \n", dn);
+    strncpy(ss, ssidName, sizeof(ss));
+    ss[3] = '\0';
+    UART_PRINT("\r ss: %s \n", ss);
+    strncpy(ch, dn, 5);
+    strncat(ch, ss, 4);
+    ch[7] = '\0';
+    ch[8] = '\0';
+    UART_PRINT("\r ch:%s \n", ch);
+    int hashi;
+    hashi = abs(hashf(ch));
+    UART_PRINT("\r [TCPClient] unhashed: %s size: %d hashed: %d \n", ch, strlen(ch), hashi);
     loco = cJSON_CreateObject();
-    cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
-    cJSON_AddStringToObject(loco, "devicename", myDeviceName);//"Movprov");
-    cJSON_AddStringToObject(loco, "ssid", ssidName);
-    /*
-    //cJSON_AddNumberToObject(loco, "id", 43672934);
-    cJSON_AddNumberToObject(loco, "id", 1);
-    cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
-    cJSON_AddBoolToObject(loco, "status", true);
-    //pthread_mutex_lock(&voltageMutex);
-    //cJSON_AddNumberToObject(loco, "voltage", voltage);
-    //pthread_mutex_unlock(&voltageMutex);
-    cJSON_AddNumberToObject(loco, "freq", 50.3);
-    cJSON_AddNumberToObject(loco, "lat", 13.4538);
-    cJSON_AddNumberToObject(loco, "lng", 77.6283);
-    */
+    switch(portNumber)
+    {
+        case 38979:
+            cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+            cJSON_AddStringToObject(loco, "devicename", myDeviceName);//"Movprov");
+            cJSON_AddStringToObject(loco, "ssid", ssidName);
+            cJSON_AddNumberToObject(loco, "hash", hashi);
+            break;
+        case 38981:
+            //cJSON_AddNumberToObject(loco, "id", 43672934);
+            cJSON_AddNumberToObject(loco, "id", hashi);
+            cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+            cJSON_AddBoolToObject(loco, "status", true);
+            //pthread_mutex_lock(&voltageMutex);
+            //cJSON_AddNumberToObject(loco, "voltage", voltage);
+            //pthread_mutex_unlock(&voltageMutex);
+            cJSON_AddNumberToObject(loco, "freq", 50.3);
+            cJSON_AddNumberToObject(loco, "lat", 13.4538);
+            cJSON_AddNumberToObject(loco, "lng", 77.6283);
+            break;
+        default:
+            UART_PRINT("\r Unexpected port number %d \r\n", portNumber);
+            break;
+    }
+    free(ch);
 
     char *out = NULL;
     out = cJSON_Print(loco);
@@ -264,7 +295,7 @@ int32_t TCPClient(uint8_t nb,
 
         if(status < 0)
         {
-            UART_PRINT("\r[line:%d, error:%d] %s\n\r", __LINE__, status,
+            UART_PRINT("\r [line:%d, error:%d] %s \n", __LINE__, status,
                        SL_SOCKET_ERROR);
             sl_Close(sock);
             return(-1);
@@ -275,20 +306,20 @@ int32_t TCPClient(uint8_t nb,
 
     while(status < 0)
     {
-        UART_PRINT("***sl_Connect****\n");
+        UART_PRINT("\r ***sl_Connect**** \n");
         /* Calling 'sl_Connect' followed by server's
          * 'sl_Accept' would start session with
          * the TCP server. */
         status = sl_Connect(sock, sa, addrSize);
         if((status == SL_ERROR_BSD_EALREADY)&& (TRUE == nb))
         {
-            UART_PRINT("***SL_ERROR_BSD_EALREADY****\n");
+            UART_PRINT("\r ***SL_ERROR_BSD_EALREADY**** \n");
             sleep(1);
             continue;
         }
         else if(status < 0)
         {
-            UART_PRINT("[line:%d, error:%d] %s\n\r", __LINE__, status,
+            UART_PRINT("\r [line:%d, error:%d] %s \r\n", __LINE__, status,
                        SL_SOCKET_ERROR);
             /*if ((int)status == -453) {
                 continue; // ignore SL_ERROR_BSD_ESECSNOVERIFY error because we're not verifying server
@@ -320,7 +351,7 @@ int32_t TCPClient(uint8_t nb,
             }
 
             /* Send packets to the server */
-            UART_PRINT("Sending packet: %s \n", *buf);
+            UART_PRINT("\r Sending packet: %s \r\n", *buf);
             status = sl_Send(sock, buf, len, 0);
             if((status == SL_ERROR_BSD_EAGAIN) && (TRUE == nb))
             {
@@ -329,7 +360,7 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("[line:%d, error:%d] %s\n\r", __LINE__, status,
+                UART_PRINT("\r [line:%d, error:%d] %s \r\n", __LINE__, status,
                            SL_SOCKET_ERROR);
                 sl_Close(sock);
                 return(-1);
@@ -338,7 +369,7 @@ int32_t TCPClient(uint8_t nb,
             sent_bytes += status;
         }
 
-        UART_PRINT("Sent %u packets (%u bytes) successfully\n\r",
+        UART_PRINT("\r Sent %u packets (%u bytes) successfully \r\n",
                    i,
                    sent_bytes);
     }
@@ -356,7 +387,7 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("[line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
+                UART_PRINT("\r [line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
                 sl_Close(sock);
                 return(-1);
             }
@@ -385,19 +416,19 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("[line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
+                UART_PRINT("\r [line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
                 sl_Close(sock);
                 return -1;
             }
             else if (status == 0)
             {
-                UART_PRINT("TCP Server closed the connection\n\r");
+                UART_PRINT("\r TCP Server closed the connection\n\r");
                 break;
             }
             rcvd_bytes += status;
         }
 
-        UART_PRINT("Received %u packets (%u bytes) successfully\n\r",(rcvd_bytes/BUF_LEN), rcvd_bytes);
+        UART_PRINT("\r Received %u packets (%u bytes) successfully\n\r",(rcvd_bytes/BUF_LEN), rcvd_bytes);
         uint8_t j = 0;
         for(j = 0; j < rcvd_bytes; ++j) {
             UART_PRINT("%c", recd_data[j]);
@@ -475,4 +506,15 @@ void PrintIPAddress(unsigned char ipv6,
                     SL_IPV4_BYTE(*pIPv4,0));
     }
     return;
+}
+
+int hashf(unsigned char *str) 
+{
+    int hash = 5381;
+    int c;
+
+    while (c = *str++)
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+
+    return hash;
 }
