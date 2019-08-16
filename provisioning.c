@@ -59,6 +59,7 @@
 #include <ti/drivers/net/wifi/simplelink.h>
 #include <ti/drivers/SPI.h>
 #include <ti/drivers/GPIO.h>
+#include <ti/drivers/ADC.h>
 #include <uart_term.h>
 
 #include <pthread.h>
@@ -204,6 +205,10 @@ int32_t wlanConnect(void);
 pthread_t gProvisioningThread = (pthread_t)NULL;
 pthread_t gDisplayThread = (pthread_t)NULL;
 pthread_t gSpawnThread = (pthread_t)NULL;
+pthread_t gAdcThread = (pthread_t)NULL;
+
+extern void *adcThread(void *arg0);
+pthread_mutex_t voltageMutex;
 
 uint8_t  gIsWlanConnected = 0;
 uint8_t  gStopInProgress = 0;
@@ -491,6 +496,27 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 LOG_MESSAGE(" [Provisioning] Profile Added: PrivateToken:%s\r\n",
                             pWlanEvent->Data.ProvisioningProfileAdded.Reserved);
             }
+            /*_i32 writeStatus, closeStatus;
+            _i32 FileHdl;
+            unsigned char *DeviceFileName = "m0vNV";
+            _u32 MaxSize, MasterToken;
+            FileHdl = sl_FsOpen((unsigned char *)DeviceFileName,
+            SL_FS_CREATE|SL_FS_CREATE_SECURE|SL_FS_OVERWRITE|
+            SL_FS_CREATE_NOSIGNATURE|SL_FS_CREATE_MAX_SIZE(MaxSize), &MasterToken);
+            if(FileHdl < 0 )
+            {
+                LOG_MESSAGE(" [Provisioning] Error opening file for write %s \r\n", DeviceFileName);
+            } else {
+                writeStatus = sl_FsWrite(FileHdl, 0, (_u8 *)ssidName, strlen(ssidName));
+                if (writeStatus < 0) {
+                    LOG_MESSAGE(" [Provisioning] Error writing file %s \r\n", ssidName);
+                }
+                closeStatus = sl_FsClose(FileHdl,0,0,0);
+                if (closeStatus < 0 ) {
+                    LOG_MESSAGE(" [Provisioning] Error closing file %s \r\n", DeviceFileName);
+                    sl_FsClose(FileHdl, 0, 'A', 1);
+                } 
+            }*/
             break;
 
         case SL_WLAN_EVENT_PROVISIONING_STATUS:
@@ -1151,6 +1177,7 @@ int32_t StartConnection(void)
 {
     gIsWlanConnected = 0;
 
+    LOG_MESSAGE(" [App] StartConnection %d \n\r", g_CurrentState);
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
 
     return(0);
@@ -1400,6 +1427,7 @@ int32_t HandleWaitForIp(void)
 int32_t HandleDiscnctEvt(void)
 {
     gIsWlanConnected = 0;
+    LOG_MESSAGE("[Provisioning] HandleDiscnctEv: %d \n\r", g_CurrentState);
     StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);
     return(0);
 }
@@ -1454,7 +1482,7 @@ int32_t CheckLanConnection(void)
 //*****************************************************************************
 int32_t CheckInternetConnection(void)
 {
-    LOG_MESSAGE(" [Provisioning] CheckInternetConnection \n\r");
+    LOG_MESSAGE(" [Provisioning] CheckInternetConnection %d \n\r", g_CurrentState);
     /* Connect to cloud if enabled */
     
     return(0);
@@ -1487,6 +1515,7 @@ int32_t DoNothing(void)
 //*****************************************************************************
 int32_t HandleProvisioningTimeOut(void)
 {
+    LOG_MESSAGE("[Provisioning] HandleProvisioningTimeout: %d \n\r", g_CurrentState);
     /* Connection failed, restart */
     SignalEvent(AppEvent_RESTART);
     return(0);
@@ -1505,6 +1534,7 @@ int16_t SignalEvent(AppEvent event)
 {
     char msg = (char)event;
 
+    LOG_MESSAGE("[Provisioning] SignalEvent: %d \n\r", g_CurrentState);
     //
     //signal provisioning task about SL Event
     //
@@ -1978,10 +2008,20 @@ void * mainThread( void *arg )
     pthread_attr_t      pAttrs;
     pthread_attr_t      pAttrs_spawn;
     pthread_attr_t      pAttrs_display;
+    pthread_attr_t      pAttrs_adc;
     struct sched_param  priParam;
 
     GPIO_init();
     SPI_init();
+    ADC_init();
+
+    /* Create a mutex that will protect voltage variable */
+    RetVal = pthread_mutex_init(&voltageMutex, NULL);
+    if (RetVal != 0) {
+        /* pthread_mutex_init() failed */
+        UART_PRINT("\r m0v - Couldn't create mutex  - %d\n", RetVal);
+        while (1) {}
+    }
 
     /* Initial Terminal, and print Application name */
     InitTerm();
@@ -2012,6 +2052,7 @@ void * mainThread( void *arg )
         }
     }
 
+    /* create the provisioning thread */
     pthread_attr_init(&pAttrs);
     priParam.sched_priority = 1;
     RetVal = pthread_attr_setschedparam(&pAttrs, &priParam);
@@ -2064,5 +2105,24 @@ void * mainThread( void *arg )
         }
     }
 
+    /* create the adc thread */
+    pthread_attr_init(&pAttrs_adc);
+    priParam.sched_priority = 1;
+    RetVal = pthread_attr_setschedparam(&pAttrs_adc, &priParam);
+    RetVal |= pthread_attr_setstacksize(&pAttrs_adc, TASK_STACK_SIZE);
+
+    if(RetVal)
+    {
+        /* error handling */
+        while(1)
+        {
+            ;
+        }
+    }
+    RetVal = pthread_create(&gAdcThread, &pAttrs_adc, adcThread, NULL);
+    if (RetVal != 0) {
+        /* pthread_create() failed */
+        while (1);
+    }
     return(0);
 }

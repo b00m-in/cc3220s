@@ -14,9 +14,9 @@
 
 #ifdef SECURE_SOCKET
 #define TCP_PROTOCOL_FLAGS    SL_SEC_SOCKET
-#define ROOT_CA_CERT_FILE     "dummy-root-ca-cert" //"dst root ca x3" //
-#define PRIVATE_KEY_FILE      "dummy-trusted-cert-key" //"b00m-trusted-cert-key" //
-#define TRUSTED_CERT_FILE     "dummy-trusted-cert" //"b00m-trusted-cert" //
+#define ROOT_CA_CERT_FILE     "dst root ca x3" //"dummy-root-ca-cert" //
+#define PRIVATE_KEY_FILE      "b00m-trusted-cert-key" //"dummy-trusted-cert-key" //
+#define TRUSTED_CERT_FILE     "b00m-trusted-cert" //"dummy-trusted-cert" //
 #define TRUSTED_CERT_CHAIN    "trusted-chain.pem"
 
 #define DEVICE_YEAR                 (2018)
@@ -29,8 +29,8 @@
 #define BUF_LEN                (MAX_BUF_SIZE)
 #endif
 
-//extern volatile float voltage;
-//extern pthread_mutex_t voltageMutex;
+extern volatile float voltage;
+extern pthread_mutex_t voltageMutex;
 
 
 int32_t TCPClient(uint8_t nb,
@@ -126,6 +126,25 @@ int32_t TCPClient(uint8_t nb,
     //deviceName = malloc(strlen(my_device_name));
     //strcpy(deviceName, my_device_name);
     UART_PRINT("\r 1:%s 2:%s \r\n", myDeviceName, ssidName);
+    // on device restart ssidName is unallocated so need to reallocate it and set it with the name got from sl_WlanProfileGet
+    if (strlen(ssidName) == 0) {
+        _i16 gStatus, nameLength;
+        signed char name[32];
+        unsigned char macAddr[6];
+        SlWlanSecParams_t SecParams;
+        SlWlanGetSecParamsExt_t SecExtParams;
+        _u32 Priority;
+        gStatus = sl_WlanProfileGet(0, name, &nameLength, macAddr, &SecParams, &SecExtParams, &Priority);
+        if( gStatus < 0 )
+        {
+            UART_PRINT("\r [TCPClient] Error getting profile %s %d \r\n", name, gStatus);
+        } else {
+            UART_PRINT("\r [TCPClient] Got profile %s \r\n", name);
+            free(ssidName);
+            ssidName = malloc(nameLength);
+            strcpy(ssidName, name);
+        }
+    }
     //free(my_device_name);
     
     // calculate hash of 1st 4 of myDeviceName and 1st 3 of SSID
@@ -135,15 +154,15 @@ int32_t TCPClient(uint8_t nb,
 
     strncpy(dn, myDeviceName, sizeof(dn));
     dn[4] = '\0';
-    UART_PRINT("\r dn : %s \n", dn);
+    UART_PRINT("\r [TCPClient] dn : %s \n", dn);
     strncpy(ss, ssidName, sizeof(ss));
     ss[3] = '\0';
-    UART_PRINT("\r ss: %s \n", ss);
+    UART_PRINT("\r [TCPClient] ss: %s \n", ss);
     strncpy(ch, dn, 5);
     strncat(ch, ss, 4);
     ch[7] = '\0';
     ch[8] = '\0';
-    UART_PRINT("\r ch:%s \n", ch);
+    UART_PRINT("\r [TCPClient] ch: %s \n", ch);
     int hashi;
     hashi = abs(hashf(ch));
     UART_PRINT("\r [TCPClient] unhashed: %s size: %d hashed: %d \n", ch, strlen(ch), hashi);
@@ -161,9 +180,9 @@ int32_t TCPClient(uint8_t nb,
             cJSON_AddNumberToObject(loco, "id", hashi);
             cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
             cJSON_AddBoolToObject(loco, "status", true);
-            //pthread_mutex_lock(&voltageMutex);
-            //cJSON_AddNumberToObject(loco, "voltage", voltage);
-            //pthread_mutex_unlock(&voltageMutex);
+            pthread_mutex_lock(&voltageMutex);
+            cJSON_AddNumberToObject(loco, "voltage", voltage);
+            pthread_mutex_unlock(&voltageMutex);
             cJSON_AddNumberToObject(loco, "freq", 50.3);
             cJSON_AddNumberToObject(loco, "lat", 13.4538);
             cJSON_AddNumberToObject(loco, "lng", 77.6283);
