@@ -1958,6 +1958,12 @@ void gpioButtonFxn0(uint8_t index)
 {
     LOG_MESSAGE("\n\rGPIO button SW2 pressed .. \n\r");
     forget = true;
+    _i16 Status;
+    Status = sl_WlanProfileDel(SL_WLAN_DEL_ALL_PROFILES);
+    if( Status < 0 )
+    {
+        LOG_MESSAGE("\r\n Unable to delete all profiles %d \n\r", Status);
+    }
     SignalEvent(AppEvent_RESTART);
     return;
 }
@@ -2067,8 +2073,7 @@ void * mainThread( void *arg )
         }
     }
 
-    RetVal = pthread_create(&gProvisioningThread, &pAttrs, ProvisioningTask,
-                            NULL);
+    RetVal = pthread_create(&gProvisioningThread, &pAttrs, ProvisioningTask, NULL);
 
     if(RetVal)
     {
@@ -2094,8 +2099,7 @@ void * mainThread( void *arg )
         }
     }
 
-    RetVal = pthread_create(&gDisplayThread, &pAttrs_display, UpdateLedDisplay,
-                            NULL);
+    RetVal = pthread_create(&gDisplayThread, &pAttrs_display, UpdateLedDisplay, NULL);
 
     if(RetVal)
     {
