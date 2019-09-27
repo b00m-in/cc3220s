@@ -3,6 +3,10 @@
 #include <ti/display/Display.h>
 #include <time.h>
 #include <pthread.h>
+//#include <ti/sysbios/family/arm/m3/TimestampProvider.h>
+//#include <xdc/runtime/Types.h>
+//#include <xdc/runtime/Timestamp.h>
+#include <ti/sysbios/hal/Seconds.h>
 
 #include "socket_cmd.h"
 //#include "common.h"
@@ -28,6 +32,8 @@
 #define TCP_PROTOCOL_FLAGS      0
 #define BUF_LEN                (MAX_BUF_SIZE)
 #endif
+
+//#define Timestamp_get   TimestampProvider_get32
 
 extern volatile float voltage;
 extern pthread_mutex_t voltageMutex;
@@ -114,9 +120,48 @@ int32_t TCPClient(uint8_t nb,
     abstime.tv_sec = 0;
     abstime.tv_nsec = 0;
     clock_gettime(CLOCK_REALTIME, &abstime);
-    
-    uint8_t nameLen = SL_NETAPP_MAX_DEVICE_URN_LEN;
+    UART_PRINT("\r [TCPClient] abstime: %d \n", abstime.tv_sec);
+
     int32_t ret;
+
+    /*get time, convert it to time_t */
+    SlDateTime_t dateTime= {0};
+    //memset(&dateTime, 0x0, sizeof(SlDateTime_t));
+    _i8 configOpt = SL_DEVICE_GENERAL_DATE_TIME;
+    ret = sl_DeviceGet(SL_DEVICE_GENERAL, &configOpt, sizeof(SlDateTime_t), (_u8*)(&dateTime));
+    ASSERT_ON_ERROR1(ret, DEVICE_ERROR);
+    UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
+    //char timestr[20] = {0} ;
+    _u8 *timestr = malloc(20);
+    memset(timestr, 0x0, 20);
+    sprintf(timestr, "%4d-%02d-%02dT%02d:%02d:%02dZ", dateTime.tm_year, dateTime.tm_mon+1, dateTime.tm_day, dateTime.tm_hour, dateTime.tm_min, dateTime.tm_sec); //RFC3339
+    UART_PRINT("\r [TCPClient] %s\n", timestr);
+    /*
+    struct tm sse = {0};
+    memset(&sse, 0x0, sizeof(struct tm));
+    sse.tm_sec = dateTime.tm_sec;
+    sse.tm_min = dateTime.tm_min;
+    sse.tm_hour= dateTime.tm_hour;
+    sse.tm_mday= dateTime.tm_day;
+    sse.tm_mon = dateTime.tm_mon;
+    sse.tm_year= dateTime.tm_year;
+    UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", sse.tm_year, sse.tm_mon, sse.tm_mday);
+    time_t send;
+    send = time(NULL); //mktime(&sse);
+    free(&dateTime);
+    free(&sse);
+    UART_PRINT("\r [TCPClient] send: %d\n", send);
+    */
+    //uint32_t send = Timestamp_get();
+    /*time_t send;
+    send = time(NULL);
+    UART_PRINT("\r [TCPClient] ts: %d\n", send);
+    */
+    Seconds_set(1412800000); /* Wed, 08 Oct 2014 20:26:40 GMT */
+    /*send = time(NULL);
+    UART_PRINT("\r [TCPClient] ts: %d\n", send);
+    */
+    uint8_t nameLen = SL_NETAPP_MAX_DEVICE_URN_LEN;
     free(myDeviceName);
     myDeviceName = malloc(SL_NETAPP_MAX_DEVICE_URN_LEN);
     ret = sl_NetAppGet (SL_NETAPP_DEVICE_ID, SL_NETAPP_DEVICE_URN, &nameLen, (_u8 *)myDeviceName);
@@ -171,14 +216,17 @@ int32_t TCPClient(uint8_t nb,
     {
         case 38979:
             cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+            //cJSON_AddStringToObject(loco, "timestr", timestr);
             cJSON_AddStringToObject(loco, "devicename", myDeviceName);//"Movprov");
             cJSON_AddStringToObject(loco, "ssid", ssidName);
             cJSON_AddNumberToObject(loco, "hash", hashi);
+            cJSON_AddStringToObject(loco, "email", "r5@fed.com");
             break;
         case 38981:
             //cJSON_AddNumberToObject(loco, "id", 43672934);
             cJSON_AddNumberToObject(loco, "id", hashi);
             cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+            cJSON_AddStringToObject(loco, "timestr", timestr);
             cJSON_AddBoolToObject(loco, "status", true);
             pthread_mutex_lock(&voltageMutex);
             cJSON_AddNumberToObject(loco, "voltage", voltage);
@@ -269,13 +317,14 @@ int32_t TCPClient(uint8_t nb,
 
 #ifdef SECURE_SOCKET
 
-    SlDateTime_t dateTime;
-    dateTime.tm_day = DEVICE_DATE;
-    dateTime.tm_mon = DEVICE_MONTH;
-    dateTime.tm_year = DEVICE_YEAR;
+    //SlDateTime_t dateTime;
+    if (dateTime.tm_year < 2019) {
+        dateTime.tm_day = DEVICE_DATE;
+        dateTime.tm_mon = DEVICE_MONTH;
+        dateTime.tm_year = DEVICE_YEAR;
 
-    sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
-
+        sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
+    }
     UART_PRINT("\r [TCPClient] *** SSL ****\n");
     /* Set the following to enable Server Authentication */
     //sl_SetSockOpt(sock,SL_SOL_SOCKET,SL_SO_SECURE_FILES_CA_FILE_NAME, ROOT_CA_CERT_FILE, strlen(ROOT_CA_CERT_FILE));
@@ -459,6 +508,7 @@ int32_t TCPClient(uint8_t nb,
     status = sl_Close(sock);
     ASSERT_ON_ERROR1(status, SL_SOCKET_ERROR);
 
+    free(timestr);
     free(out);
     free(buf);
     cJSON_Delete(loco);

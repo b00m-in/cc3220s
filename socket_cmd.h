@@ -50,6 +50,8 @@
         "Socket error, please refer \"SOCKET ERRORS CODES\" section in errors.h")
 #define NETAPP_ERROR            ( \
         "Netapp error, please refer \"NETAPP ERRORS CODES\" section in errors.h")
+#define DEVICE_ERROR            ( \
+        "Device error, please refer \"NETAPP ERRORS CODES\" section in errors.h")
 
 #define MAX_BUF_SIZE            (1400)
 #define MAX_TEXT_PAD_SIZE       (256)
