@@ -132,8 +132,9 @@ typedef struct appControlBlock_t
 
 extern appControlBlock app_CB;
 char *ssidName;
-char *deviceName;
+//char *deviceName;
 _u8 *myDeviceName;
+_u32 *email;
 
 void PrintIPAddress(unsigned char ipv6,
                     void *ip);

@@ -60,6 +60,8 @@
 #include <ti/drivers/SPI.h>
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/ADC.h>
+#include <ti/net/utils/clock_sync.h>
+#include <ti/drivers/net/wifi/slnetifwifi.h>
 #include <uart_term.h>
 
 #include <pthread.h>
@@ -452,12 +454,12 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             pWlanEvent->Data.Connect.SsidName[pWlanEvent->Data.Connect.SsidLen] =
                 '\0';
 
-            LOG_MESSAGE("SSID:%s\r\n", pWlanEvent->Data.Connect.SsidName);
+            LOG_MESSAGE("\r SSID:%s \n", pWlanEvent->Data.Connect.SsidName);
             SignalEvent(AppEvent_CONNECTED);
             break;
 
         case SL_WLAN_EVENT_DISCONNECT:
-            LOG_MESSAGE(" [Event] STA disconnected from AP (Reason Code = %d)\r\n",
+            LOG_MESSAGE("\r [Event] STA disconnected from AP (Reason Code = %d) \n",
                         pWlanEvent->Data.Disconnect.ReasonCode);
             SignalEvent(AppEvent_DISCONNECT);
             break;
@@ -486,11 +488,13 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             break;
 
         case SL_WLAN_EVENT_PROVISIONING_PROFILE_ADDED:
-            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s sizeof: %d strlen: %d\r\n", pWlanEvent->Data.ProvisioningProfileAdded.Ssid, sizeof(pWlanEvent->Data.ProvisioningProfileAdded.Ssid), strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
+            LOG_MESSAGE("\r [Provisioning] Profile Added: SSID: %s sizeof: %d strlen: %d \n", pWlanEvent->Data.ProvisioningProfileAdded.Ssid, sizeof(pWlanEvent->Data.ProvisioningProfileAdded.Ssid), strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
+            uint8_t len = strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
             free(ssidName);
-            ssidName = malloc(strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
-            strcpy(ssidName, pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
-            LOG_MESSAGE(" [Provisioning] Profile Added: SSID: %s - %d - %d \r\n", ssidName, strlen(ssidName), sizeof(ssidName));
+            ssidName = malloc(len+1);
+            memcpy(ssidName, pWlanEvent->Data.ProvisioningProfileAdded.Ssid, len);
+            //ssidName[len] = '\0';
+            LOG_MESSAGE("\r [Provisioning] Profile Added: SSID: %s - %d - %d \n", ssidName, strlen(ssidName), sizeof(ssidName));
             if(pWlanEvent->Data.ProvisioningProfileAdded.ReservedLen > 0)
             {
                 LOG_MESSAGE(" [Provisioning] Profile Added: PrivateToken:%s\r\n",
@@ -543,8 +547,9 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_CONNECTION_FAILED:
                 LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation failed:"
+                    " \r [Provisioning] Profile confirmation failed:"
                     " Connection failed\r\n");
+                LOG_MESSAGE("\r Try to connect to %s with external config \n", ssidName);
                 SignalEvent(AppEvent_PROVISIONING_STARTED);
                 break;
 
@@ -630,22 +635,22 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                     " [Provisioning] Profile confirmation: IP Acquired!\r\n");
                 break;
 
-                case SL_WLAN_PROVISIONING_EXTERNAL_CONFIGURATION_READY:
-                    LOG_MESSAGE(" [Provisioning] External "
-                                    "configuration is ready! \r\n");
-                    /* [External configuration]: External configuration is ready,
-                    start the external configuration process.
-                    In case of using the external provisioning
-                    enable the function below which will trigger StartExternalProvisioning() */
-                    /* SignalEvent(AppEvent_STARTED); */
-                    break;
+            case SL_WLAN_PROVISIONING_EXTERNAL_CONFIGURATION_READY:
+                LOG_MESSAGE(" [Provisioning] External "
+                                "configuration is ready! \r\n");
+                /* [External configuration]: External configuration is ready,
+                start the external configuration process.
+                In case of using the external provisioning
+                enable the function below which will trigger StartExternalProvisioning() */
+                /* SignalEvent(AppEvent_STARTED); */
+                break;
 
-                default:
-                    LOG_MESSAGE(" [Provisioning] "
-                                    "Unknown Provisioning Status: %d\r\n",
-                                    pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
-                    break;
-                }
+            default:
+                LOG_MESSAGE(" [Provisioning] "
+                                "Unknown Provisioning Status: %d\r\n",
+                                pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+                break;
+            }
         }
         break;
 
@@ -841,6 +846,45 @@ void SimpleLinkNetAppRequestEventHandler(SlNetAppRequest_t *pNetAppRequest,
                                          SlNetAppResponse_t *pNetAppResponse)
 {
     /* Unused in this application */
+    LOG_MESSAGE("[EventHandler] received non API post \r\n");
+    extern _u16 gHandle;
+    switch(pNetAppRequest->Type)
+    {
+    case SL_NETAPP_REQUEST_HTTP_POST:
+    {
+        _u32 RequestFlags;
+        _u32 ContentLength;
+        RequestFlags = pNetAppRequest->requestData.Flags;
+        /* Prepare pending response */
+        pNetAppResponse->ResponseData.pMetadata = NULL;
+        pNetAppResponse->ResponseData.MetadataLen = 0;
+        pNetAppResponse->ResponseData.pPayload = NULL;
+        pNetAppResponse->ResponseData.PayloadLen = 0;
+        pNetAppResponse->ResponseData.Flags = 0;
+        if (pNetAppRequest->requestData.MetadataLen > 0)
+        {
+            /* Process the meta data in
+             * pNetAppRequest->requestData.pMetadata */
+            ContentLength = ExtractLengthFromMetaData(
+            pNetAppRequest->requestData.pMetadata,
+            pNetAppRequest->requestData.MetadataLen);
+            LOG_MESSAGE("[POST EventHandler] header - (%d) content length \r\n ", ContentLength);
+            /* Allocate buffer to receive the entire content if needed */
+        }
+        pNetAppResponse->Status = SL_NETAPP_HTTP_RESPONSE_200_OK;
+        /*
+        pNetAppResponse->ResponseData.pMetadata = NULL;
+        pNetAppResponse->ResponseData.MetadataLen = 0;
+        pNetAppResponse->ResponseData.pPayload = NULL;
+        pNetAppResponse->ResponseData.PayloadLen = 0;
+        pNetAppResponse->ResponseData.Flags = 0;
+        */
+    }
+    break;
+    default:
+    /* GET/PUT/DELETE requests will reach here. */
+    break;
+}
 }
 
 void SimpleLinkNetAppRequestMemFreeEventHandler(uint8_t *buffer)
@@ -957,6 +1001,8 @@ void * UpdateLedDisplay(void *arg)
                 {
                     GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_ON);
                     gLedState = 1;
+                    GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_OFF);
+                    GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_OFF);
                 }
             }
             else /* disconnected (blink led) */
@@ -1226,7 +1272,8 @@ int32_t HandleProvisioningComplete(void)
     StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);
 
     if(!once) {
-        LOG_MESSAGE(" [TCPClient] Sending confo current=%d  \r\n", g_CurrentState);
+        LOG_MESSAGE(" [ProvisioningComplete] Sending confo current=%d  \r\n", g_CurrentState);
+        GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_ON);
         //int32_t             status = 0;
         //status = wlanConnect();
         //if (status < 0) {
@@ -1244,6 +1291,9 @@ int32_t HandleProvisioningComplete(void)
         if (ret != 0) {
             LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
             //Display_printf(display, 0, 0, "TCPClient failed");
+        }
+        else {
+            GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_OFF);
         }
         once=true;
 
@@ -1281,22 +1331,22 @@ int32_t SendPingToGW(void)
 
     sl_NetCfgGet(SL_NETCFG_IPV4_STA_ADDR_MODE,&ConfigOpt,&len,(uint8_t *)&ipV4);
 
-/* destination IP of gateway                */
+    /* destination IP of gateway                */
     pingCommand.Ip = ipV4.IpGateway; 
 
-/* size of ping, in bytes                   */    
+    /* size of ping, in bytes                   */    
     pingCommand.PingSize = 150;           
 
-/* delay between pings, in milliseconds     */    
-    pingCommand.PingIntervalTime = 30000;    
+    /* delay between pings, in milliseconds     */    
+    pingCommand.PingIntervalTime = 60000;    
 
-/* timeout for every ping in milliseconds   */    
+    /* timeout for every ping in milliseconds   */    
     pingCommand.PingRequestTimeout = 1000; 
 
-/* max number of ping requests. 0 - forever */    
+    /* max number of ping requests. 0 - forever */    
     pingCommand.TotalNumberOfAttempts = 1; 
 
-/* report only when finished                */    
+    /* report only when finished                */    
     pingCommand.Flags = 0;                          
 
     /* Ping Gateway */
@@ -1325,6 +1375,35 @@ int32_t SendPingToGW(void)
     pingCommand.Ip = 0; 
     sl_NetAppPing( &pingCommand, SL_AF_INET, &report, NULL );
 
+    /* Get time from ntps */
+    LOG_MESSAGE("Timezone = %d.\n\r",ClockSync_getTimeZone());
+    struct tm netTime;
+    int32_t status = 0;
+    status = ClockSync_get(&netTime);
+    if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
+    {
+        LOG_MESSAGE("Localtime: %s/r/n", asctime(&netTime));
+    }
+    else
+    {
+        LOG_MESSAGE("Error = %d\n\r",status);
+    }
+
+    /* Set the time on the device - this needs to be done everytime to ensure the device doesn't lose track of the time on a power cycle. */
+    SlDateTime_t dateTime= {0};
+    dateTime.tm_sec = netTime.tm_sec;
+    dateTime.tm_min = netTime.tm_min;
+    dateTime.tm_hour = netTime.tm_hour;
+    dateTime.tm_day = netTime.tm_mday;
+    dateTime.tm_mon = netTime.tm_mon;
+    dateTime.tm_year = netTime.tm_year + 1900;
+    sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
+    /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) 
+    {
+        LOG_MESSAGE("settime error \n\r");
+    }*/
+
+    GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_ON);
     int32_t ret = 0;
     ip_t dest;
     //memset(&dest, 0x0, sizeof(dest));
@@ -1337,7 +1416,9 @@ int32_t SendPingToGW(void)
         LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
         //Display_printf(display, 0, 0, "TCPClient failed");
     }
-
+    else {
+        GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_OFF);
+    }
     StartAsyncEvtTimer(PING_TIMEOUT_SEC);
 
     return(0);
@@ -1393,6 +1474,21 @@ int32_t HandleUserApplication(void)
     /* Reset Over All Ping Statistics*/
     gPingSent = 0;
     gPingSuccess = 0;
+
+
+    /* Get time from ntps */
+    LOG_MESSAGE("Timezone = %d.\n\r",ClockSync_getTimeZone());
+    struct tm netTime;
+    int32_t status = 0;
+    status = ClockSync_get(&netTime);
+    if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
+    {
+        LOG_MESSAGE("Localtime: %s/r/n", asctime(&netTime));
+    }
+    else
+    {
+        LOG_MESSAGE("Error = %d\n\r",status);
+    }
 
     StartAsyncEvtTimer(PING_TIMEOUT_SEC);
 
@@ -1774,6 +1870,7 @@ int32_t ProvisioningStart(void)
         ver.RomVersion,
         SL_MAJOR_VERSION_NUM,SL_MINOR_VERSION_NUM,SL_VERSION_NUM,
         SL_SUB_VERSION_NUM);
+    LOG_MESSAGE(" [App] Timezone = %d.\n\r",ClockSync_getTimeZone());
 
     macAddressLen = sizeof(simpleLinkMac);
     sl_NetCfgGet(SL_NETCFG_MAC_ADDRESS_GET,NULL,&macAddressLen,
@@ -1939,6 +2036,45 @@ static void DisplayBanner(char * AppName)
     LOG_MESSAGE("\n\n\n\r");
 }
 
+_i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
+{
+    _u8 *pTlv;
+    _u8 *pEnd;
+    _u8 Type;
+    _u16 TlvLen;
+    pTlv = pMetaDataStart;
+    pEnd = pMetaDataStart + MetaDataLen;
+    while (pTlv < pEnd)
+    {
+        Type = *pTlv; /* Type is one byte */
+        pTlv++;
+        TlvLen = *(_u16 *)pTlv; /* Length is two bytes */
+        pTlv+=2;
+        if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN)
+        {
+            _i32 LengthFieldValue=0;
+            /* Found the right type, extract its value and return. */
+            memcpy(&LengthFieldValue, pTlv, TlvLen);
+            LOG_MESSAGE("[POST] header - (%d) contentlen ", LengthFieldValue);
+            return LengthFieldValue;
+        }
+        else if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER) {
+            free(email);
+            email = malloc(TlvLen);
+            memcpy(email, pTlv, TlvLen);
+            LOG_MESSAGE("[POST] header - (%s) configurer ", email);
+        }
+        else
+        {
+            /* Not the type we are looking for. Skip over the
+             * value field to the next type. */
+            pTlv += TlvLen;
+        }
+    }
+    return -1;
+}
+
+
 /*!
     \brief          GPIO button function callback
 
@@ -1977,8 +2113,8 @@ int32_t wlanConnect(void)
     secParams.KeyLen = strlen(AP_SEC_PASSWORD);
     secParams.Type = AP_SEC_TYPE;
 
-    status = sl_WlanConnect((signed char*)ssidName, strlen(
-                                ssidName), 0, &secParams, 0);
+    status = sl_WlanConnect((const signed char*)ssidName, strlen(ssidName),  
+                            0, &secParams, 0);
     ASSERT_ON_ERROR(status);
     
     //Display_printf(display, 0, 0, "Trying to connect to AP : %s\n\r", SSID_NAME);
@@ -2016,6 +2152,15 @@ void * mainThread( void *arg )
     pthread_attr_t      pAttrs_display;
     pthread_attr_t      pAttrs_adc;
     struct sched_param  priParam;
+
+    /* Initialize SlNetSock layer with CC31xx/CC32xx interface */
+    SlNetIf_init(0);
+    SlNetIf_add(SLNETIF_ID_1, "CC32xx",
+                (const SlNetIf_Config_t *)&SlNetIfConfigWifi,
+                5);
+
+    SlNetSock_init(0);
+    SlNetUtil_init(0);
 
     GPIO_init();
     SPI_init();

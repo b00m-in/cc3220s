@@ -23,9 +23,10 @@
 #define TRUSTED_CERT_FILE     "b00m-trusted-cert" //"dummy-trusted-cert" //
 #define TRUSTED_CERT_CHAIN    "trusted-chain.pem"
 
-#define DEVICE_YEAR                 (2018)
+#define DEVICE_YEAR                 (2019)
 #define DEVICE_MONTH                (3)
 #define DEVICE_DATE                 (30)
+#define DEVICE_HOUR                 (15)
 
 #define BUF_LEN                (MAX_BUF_SIZE - 20)
 #else
@@ -116,11 +117,12 @@ int32_t TCPClient(uint8_t nb,
 
     /* prepare json packet*/
     cJSON *loco = NULL;
-    struct timespec abstime;
-    abstime.tv_sec = 0;
-    abstime.tv_nsec = 0;
+    //struct timespec abstime;
+    struct tm abstime;
+    abstime.tm_sec = 0;
+    //abstime.tm_nsec = 0;
     clock_gettime(CLOCK_REALTIME, &abstime);
-    UART_PRINT("\r [TCPClient] abstime: %d \n", abstime.tv_sec);
+    UART_PRINT("\r [TCPClient] abstime: %d \n", abstime.tm_sec);
 
     int32_t ret;
 
@@ -136,9 +138,10 @@ int32_t TCPClient(uint8_t nb,
     memset(timestr, 0x0, 20);
     sprintf(timestr, "%4d-%02d-%02dT%02d:%02d:%02dZ", dateTime.tm_year, dateTime.tm_mon+1, dateTime.tm_day, dateTime.tm_hour, dateTime.tm_min, dateTime.tm_sec); //RFC3339
     UART_PRINT("\r [TCPClient] %s\n", timestr);
-    /*
+    
+    /* The following block doesn't work - the variable send gets set to a -ive integer
     struct tm sse = {0};
-    memset(&sse, 0x0, sizeof(struct tm));
+    //memset(&sse, 0x0, sizeof(struct tm));
     sse.tm_sec = dateTime.tm_sec;
     sse.tm_min = dateTime.tm_min;
     sse.tm_hour= dateTime.tm_hour;
@@ -147,20 +150,22 @@ int32_t TCPClient(uint8_t nb,
     sse.tm_year= dateTime.tm_year;
     UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", sse.tm_year, sse.tm_mon, sse.tm_mday);
     time_t send;
-    send = time(NULL); //mktime(&sse);
-    free(&dateTime);
-    free(&sse);
+    send = mktime(&sse); //time(NULL);
+    //free(&dateTime);
+    //free(&sse);
     UART_PRINT("\r [TCPClient] send: %d\n", send);
     */
     //uint32_t send = Timestamp_get();
     /*time_t send;
-    send = time(NULL);
+    send = time(&);
     UART_PRINT("\r [TCPClient] ts: %d\n", send);
     */
-    Seconds_set(1412800000); /* Wed, 08 Oct 2014 20:26:40 GMT */
+
+    //Seconds_set(1412800000); /* Wed, 08 Oct 2014 20:26:40 GMT */
     /*send = time(NULL);
     UART_PRINT("\r [TCPClient] ts: %d\n", send);
     */
+
     uint8_t nameLen = SL_NETAPP_MAX_DEVICE_URN_LEN;
     free(myDeviceName);
     myDeviceName = malloc(SL_NETAPP_MAX_DEVICE_URN_LEN);
@@ -170,7 +175,7 @@ int32_t TCPClient(uint8_t nb,
     //free(deviceName);
     //deviceName = malloc(strlen(my_device_name));
     //strcpy(deviceName, my_device_name);
-    UART_PRINT("\r 1:%s 2:%s \r\n", myDeviceName, ssidName);
+    UART_PRINT("\r [TCPClient] 1:%s 2:%s \n", myDeviceName, ssidName);
     // on device restart ssidName is unallocated so need to reallocate it and set it with the name got from sl_WlanProfileGet
     if (strlen(ssidName) == 0) {
         _i16 gStatus, nameLength;
@@ -182,9 +187,9 @@ int32_t TCPClient(uint8_t nb,
         gStatus = sl_WlanProfileGet(0, name, &nameLength, macAddr, &SecParams, &SecExtParams, &Priority);
         if( gStatus < 0 )
         {
-            UART_PRINT("\r [TCPClient] Error getting profile %s %d \r\n", name, gStatus);
+            UART_PRINT("\r [TCPClient] Error getting profile %s %d \n", name, gStatus);
         } else {
-            UART_PRINT("\r [TCPClient] Got profile %s \r\n", name);
+            UART_PRINT("\r [TCPClient] Got profile %s \n", name);
             free(ssidName);
             ssidName = malloc(nameLength);
             strcpy(ssidName, name);
@@ -214,18 +219,18 @@ int32_t TCPClient(uint8_t nb,
     loco = cJSON_CreateObject();
     switch(portNumber)
     {
-        case 38979:
-            cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+        case 38979: // confo
+            cJSON_AddNumberToObject(loco, "timestamp", abstime.tm_sec);
             //cJSON_AddStringToObject(loco, "timestr", timestr);
             cJSON_AddStringToObject(loco, "devicename", myDeviceName);//"Movprov");
             cJSON_AddStringToObject(loco, "ssid", ssidName);
             cJSON_AddNumberToObject(loco, "hash", hashi);
-            cJSON_AddStringToObject(loco, "email", "r5@fed.com");
+            cJSON_AddStringToObject(loco, "email", email);
             break;
-        case 38981:
+        case 38981: // packet
             //cJSON_AddNumberToObject(loco, "id", 43672934);
             cJSON_AddNumberToObject(loco, "id", hashi);
-            cJSON_AddNumberToObject(loco, "timestamp", abstime.tv_sec);
+            cJSON_AddNumberToObject(loco, "timestamp", abstime.tm_sec); //.tv_sec // for timespec
             cJSON_AddStringToObject(loco, "timestr", timestr);
             cJSON_AddBoolToObject(loco, "status", true);
             pthread_mutex_lock(&voltageMutex);
@@ -236,7 +241,7 @@ int32_t TCPClient(uint8_t nb,
             cJSON_AddNumberToObject(loco, "lng", 77.6283);
             break;
         default:
-            UART_PRINT("\r Unexpected port number %d \r\n", portNumber);
+            UART_PRINT("\r [TCPClient] Unexpected port number %d \r\n", portNumber);
             break;
     }
     free(ch);
@@ -249,16 +254,16 @@ int32_t TCPClient(uint8_t nb,
     buf = (char*)malloc(len);
     if (buf == NULL)
     {
-        UART_PRINT("Failed to allocate memory.\n");
+        UART_PRINT(" \r [TCPClient] Failed to allocate memory.\n");
         return -1;
     }
     /* Print to buffer */
     if (!cJSON_PrintPreallocated(loco, buf, (int)len, 1)) {
-        UART_PRINT("cJSON_PrintPreallocated failed!\n");
+        UART_PRINT("\r [TCPClient] cJSON_PrintPreallocated failed!\n");
         if (strcmp(out, buf) != 0) {
-            UART_PRINT("cJSON_PrintPreallocated not the same as cJSON_Print!\n");
-            UART_PRINT("cJSON_Print result:\n%s\n", out);
-            UART_PRINT("cJSON_PrintPreallocated result:\n%s\n", buf);
+            UART_PRINT("\r [TCPClient] cJSON_PrintPreallocated not the same as cJSON_Print!\n");
+            UART_PRINT("\r [TCPClient] cJSON_Print result:\n%s\n", out);
+            UART_PRINT("\r [TCPClient] cJSON_PrintPreallocated result:\n%s\n", buf);
         }
         free(out);
         free(buf);
@@ -322,6 +327,7 @@ int32_t TCPClient(uint8_t nb,
         dateTime.tm_day = DEVICE_DATE;
         dateTime.tm_mon = DEVICE_MONTH;
         dateTime.tm_year = DEVICE_YEAR;
+        dateTime.tm_hour = DEVICE_HOUR;
 
         sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
     }
@@ -363,7 +369,7 @@ int32_t TCPClient(uint8_t nb,
 
         if(status < 0)
         {
-            UART_PRINT("\r [line:%d, error:%d] %s \n", __LINE__, status,
+            UART_PRINT("\r [TCPClient] [line:%d, error:%d] %s \n", __LINE__, status,
                        SL_SOCKET_ERROR);
             sl_Close(sock);
             return(-1);
@@ -374,20 +380,20 @@ int32_t TCPClient(uint8_t nb,
 
     while(status < 0)
     {
-        UART_PRINT("\r ***sl_Connect**** \n");
+        UART_PRINT("\r [TCPClient] ***sl_Connect**** \n");
         /* Calling 'sl_Connect' followed by server's
          * 'sl_Accept' would start session with
          * the TCP server. */
         status = sl_Connect(sock, sa, addrSize);
         if((status == SL_ERROR_BSD_EALREADY)&& (TRUE == nb))
         {
-            UART_PRINT("\r ***SL_ERROR_BSD_EALREADY**** \n");
+            UART_PRINT("\r [TCPClient] ***SL_ERROR_BSD_EALREADY**** \n");
             sleep(1);
             continue;
         }
         else if(status < 0)
         {
-            UART_PRINT("\r [line:%d, error:%d] %s \r\n", __LINE__, status,
+            UART_PRINT("\r [TCPClient] [line:%d, error:%d] %s \r\n", __LINE__, status,
                        SL_SOCKET_ERROR);
             /*if ((int)status == -453) {
                 continue; // ignore SL_ERROR_BSD_ESECSNOVERIFY error because we're not verifying server
@@ -419,7 +425,7 @@ int32_t TCPClient(uint8_t nb,
             }
 
             /* Send packets to the server */
-            UART_PRINT("\r Sending packet: %s \r\n", *buf);
+            UART_PRINT("\r [TCPClient] Sending packet: %s \n", *buf);
             status = sl_Send(sock, buf, len, 0);
             if((status == SL_ERROR_BSD_EAGAIN) && (TRUE == nb))
             {
@@ -428,7 +434,7 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("\r [line:%d, error:%d] %s \r\n", __LINE__, status,
+                UART_PRINT("\r [TCPClient] [line:%d, error:%d] %s \n", __LINE__, status,
                            SL_SOCKET_ERROR);
                 sl_Close(sock);
                 return(-1);
@@ -437,7 +443,7 @@ int32_t TCPClient(uint8_t nb,
             sent_bytes += status;
         }
 
-        UART_PRINT("\r Sent %u packets (%u bytes) successfully \r\n",
+        UART_PRINT("\r [TCPClient] Sent %u packets (%u bytes) successfully \n",
                    i,
                    sent_bytes);
     }
@@ -455,19 +461,19 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("\r [line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
+                UART_PRINT("\r [TCPClient] [line:%d, error:%d] %s \n", __LINE__, status, BSD_SOCKET_ERROR);
                 sl_Close(sock);
                 return(-1);
             }
             else if(status == 0)
             {
-                UART_PRINT("TCP Server closed the connection\n\r");
+                UART_PRINT("\r [TCPClient] TCP Server closed the connection \n");
                 break;
             }
             rcvd_bytes += status;
         }
 
-        UART_PRINT("Received %u packets (%u bytes) successfully\n\r", (rcvd_bytes / BUF_LEN), rcvd_bytes);
+        UART_PRINT("\r [TCPClient] Received %u packets (%u bytes) successfully \n", (rcvd_bytes / BUF_LEN), rcvd_bytes);
     }
 
     if(tx) //receive thank you response
@@ -484,24 +490,24 @@ int32_t TCPClient(uint8_t nb,
             }
             else if(status < 0)
             {
-                UART_PRINT("\r [line:%d, error:%d] %s\n\r", __LINE__, status, BSD_SOCKET_ERROR);
+                UART_PRINT("\r [TCPClient] [line:%d, error:%d] %s \n", __LINE__, status, BSD_SOCKET_ERROR);
                 sl_Close(sock);
                 return -1;
             }
             else if (status == 0)
             {
-                UART_PRINT("\r TCP Server closed the connection\n\r");
+                UART_PRINT("\r [TCPClient] TCP Server closed the connection \n");
                 break;
             }
             rcvd_bytes += status;
         }
 
-        UART_PRINT("\r Received %u packets (%u bytes) successfully\n\r",(rcvd_bytes/BUF_LEN), rcvd_bytes);
+        UART_PRINT("\r [TCPClient] Received %u packets (%u bytes) successfully\n",(rcvd_bytes/BUF_LEN), rcvd_bytes);
         uint8_t j = 0;
         for(j = 0; j < rcvd_bytes; ++j) {
             UART_PRINT("%c", recd_data[j]);
         }
-        UART_PRINT("\n");
+        UART_PRINT("\r [TCPClient] End \n");
     }
     /* Calling 'close' with the socket descriptor,
      * once operation is finished. */
