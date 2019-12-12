@@ -154,7 +154,7 @@ typedef enum
     AppEvent_TIMEOUT,
     AppEvent_ERROR,
     AppEvent_RESTART,
-    AppEvent_MAX,
+    AppEvent_MAX
 
 }AppEvent;
 
@@ -454,19 +454,19 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             pWlanEvent->Data.Connect.SsidName[pWlanEvent->Data.Connect.SsidLen] =
                 '\0';
 
-            LOG_MESSAGE("\r SSID:%s \n", pWlanEvent->Data.Connect.SsidName);
+            LOG_MESSAGE("\r SSID:%s CurrentState: %d \n", pWlanEvent->Data.Connect.SsidName, g_CurrentState);
             SignalEvent(AppEvent_CONNECTED);
             break;
 
         case SL_WLAN_EVENT_DISCONNECT:
-            LOG_MESSAGE("\r [Event] STA disconnected from AP (Reason Code = %d) \n",
-                        pWlanEvent->Data.Disconnect.ReasonCode);
+            LOG_MESSAGE("\r [Event] STA disconnected from AP (Reason Code = %d) CurrentState: %d \n", pWlanEvent->Data.Disconnect.ReasonCode, g_CurrentState);
             SignalEvent(AppEvent_DISCONNECT);
             break;
 
         case SL_WLAN_EVENT_STA_ADDED:
+            LOG_MESSAGE("\r [Event] New STA Added CurrentState: %d \n", g_CurrentState);
             LOG_MESSAGE(
-                " [Event] New STA Addeed (MAC Address:"
+                "\r [Event] New STA Added (MAC Address:"
                 " %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
                 pWlanEvent->Data.STAAdded.Mac[0],
                 pWlanEvent->Data.STAAdded.Mac[1],
@@ -477,8 +477,9 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             break;
 
         case SL_WLAN_EVENT_STA_REMOVED:
+            LOG_MESSAGE("\r [Event] STA Removed CurrentState: %d \n", g_CurrentState);
             LOG_MESSAGE(
-                " [Event] STA Removed (MAC Address: %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
+                "\r [Event] STA Removed (MAC Address: %.2x:%.2x:%.2x:%.2x:%.2x)\r\n",
                 pWlanEvent->Data.STAAdded.Mac[0],
                 pWlanEvent->Data.STAAdded.Mac[1],
                 pWlanEvent->Data.STAAdded.Mac[2],
@@ -488,12 +489,13 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             break;
 
         case SL_WLAN_EVENT_PROVISIONING_PROFILE_ADDED:
+            LOG_MESSAGE("\r [Provisioning] Profile Added CurrentState: %d \n", g_CurrentState);
             LOG_MESSAGE("\r [Provisioning] Profile Added: SSID: %s sizeof: %d strlen: %d \n", pWlanEvent->Data.ProvisioningProfileAdded.Ssid, sizeof(pWlanEvent->Data.ProvisioningProfileAdded.Ssid), strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid));
             uint8_t len = strlen(pWlanEvent->Data.ProvisioningProfileAdded.Ssid);
             free(ssidName);
             ssidName = malloc(len+1);
             memcpy(ssidName, pWlanEvent->Data.ProvisioningProfileAdded.Ssid, len);
-            //ssidName[len] = '\0';
+            ssidName[len] = '\0';
             LOG_MESSAGE("\r [Provisioning] Profile Added: SSID: %s - %d - %d \n", ssidName, strlen(ssidName), sizeof(ssidName));
             if(pWlanEvent->Data.ProvisioningProfileAdded.ReservedLen > 0)
             {
@@ -546,10 +548,11 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_CONNECTION_FAILED:
-                LOG_MESSAGE(
-                    " \r [Provisioning] Profile confirmation failed:"
-                    " Connection failed\r\n");
-                LOG_MESSAGE("\r Try to connect to %s with external config \n", ssidName);
+                LOG_MESSAGE("\r [Provisioning] Profile Confirmation failed CurrentState: %d \n", g_CurrentState);
+                LOG_MESSAGE(" \r [Provisioning] Profile confirmation failed:"
+                    " Connection failed for %s w/ status %d \r\n", 
+                    pWlanEvent->Data.ProvisioningStatus.Ssid, 
+                    pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                 SignalEvent(AppEvent_PROVISIONING_STARTED);
                 break;
 
@@ -573,31 +576,31 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 break;
 
             case SL_WLAN_PROVISIONING_AUTO_STARTED:
-                LOG_MESSAGE(" [Provisioning] Auto-Provisioning Started\r\n");
+                LOG_MESSAGE("\r [Provisioning] Auto-Provisioning Started \n");
                 SignalEvent(AppEvent_RESTART);
                 break;
 
             case SL_WLAN_PROVISIONING_STOPPED:
-                LOG_MESSAGE("\r\n Provisioning stopped:");
-                LOG_MESSAGE(" Current Role: %s\r\n",
+                LOG_MESSAGE("\r [Provisioning] Provisioning stopped: CurrentState: %d \n", g_CurrentState);
+                LOG_MESSAGE("\r [Provisioning Stopped] Current Role: %s \n",
                             Roles[pWlanEvent->Data.ProvisioningStatus.Role]);
                 if(ROLE_STA == pWlanEvent->Data.ProvisioningStatus.Role)
                 {
-                    LOG_MESSAGE("WLAN Status: %s\r\n",
+                    LOG_MESSAGE("\r [Provisioning Stopped] WLAN Status: %s \n",
                                 WlanStatus[pWlanEvent->Data.ProvisioningStatus.
                                            WlanStatus]);
 
                     if(SL_WLAN_STATUS_CONNECTED ==
                        pWlanEvent->Data.ProvisioningStatus.WlanStatus)
                     {
-                        LOG_MESSAGE("Connected to SSID: %s\r\n",
+                        LOG_MESSAGE("\r [Provisioning Stopped] Connected to SSID: %s \n",
                                     pWlanEvent->Data.ProvisioningStatus.Ssid);
                         SignalEvent(AppEvent_PROVISIONING_STOPPED);
                     }
                     else if(SL_WLAN_STATUS_SCANING ==
                             pWlanEvent->Data.ProvisioningStatus.WlanStatus)
                     {
-                        LOG_MESSAGE("Scaning: %s\r\n", pWlanEvent->Data.ProvisioningStatus.WlanStatus);
+                        LOG_MESSAGE("\r [Provisioning Stopped] Scanning: %s \n", pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                         gWaitForConn = 1;
                         SignalEvent(AppEvent_PROVISIONING_WAIT_CONN);
                     }
@@ -609,6 +612,26 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                     if (TRUE == IsActiveExternalConfiguration())
                     {
                         SignalEvent(AppEvent_PROVISIONING_STOPPED);
+                        /*UART_PRINT("\r [ExtProv] Starting TCP server to listen for credentials \n");
+
+                        // Open a server socket and listen for 2 sem posts. 
+                        int32_t ret = 0;
+                        uint8_t nb = 1; 
+                        int16_t port = 8888;
+                        ret = TCPServer(nb, port, FALSE, 1, FALSE);
+
+                        if(ret < 0)
+                        {
+                            UART_PRINT("\r [ExtProv] Couldn't start TCP server so reverting .. \n");
+                            ret = sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_START_MODE_APSC, ROLE_STA,
+                                                    1200,
+                                                    NULL,
+                                                    SL_WLAN_PROVISIONING_CMD_FLAG_EXTERNAL_CONFIRMATION);
+                                                    //(uint32_t)NULL);
+                        } 
+                        else {
+                            UART_PRINT("\r [ExtProv] Started TCP server on port %d to listen for credentials \n", port);
+                        }*/
                     }
                     else
                     {
@@ -627,16 +650,16 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_WLAN_CONNECT:
                 LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation: WLAN Connected! ProvisioningStatus=%d, WlanStatus=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
+                    "\r [Provisioning] Profile confirmation: WLAN Connected! ProvisioningStatus=%d, WlanStatus=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_IP_ACQUIRED:
                 LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation: IP Acquired!\r\n");
+                    "\r [Provisioning] Profile confirmation: IP Acquired!\r\n");
                 break;
 
             case SL_WLAN_PROVISIONING_EXTERNAL_CONFIGURATION_READY:
-                LOG_MESSAGE(" [Provisioning] External "
+                LOG_MESSAGE("\r [Provisioning] External "
                                 "configuration is ready! \r\n");
                 /* [External configuration]: External configuration is ready,
                 start the external configuration process.
@@ -846,7 +869,7 @@ void SimpleLinkNetAppRequestEventHandler(SlNetAppRequest_t *pNetAppRequest,
                                          SlNetAppResponse_t *pNetAppResponse)
 {
     /* Unused in this application */
-    LOG_MESSAGE("[EventHandler] received non API post \r\n");
+    LOG_MESSAGE("\r [EventHandler] received non API post \n");
     extern _u16 gHandle;
     switch(pNetAppRequest->Type)
     {
@@ -866,9 +889,9 @@ void SimpleLinkNetAppRequestEventHandler(SlNetAppRequest_t *pNetAppRequest,
             /* Process the meta data in
              * pNetAppRequest->requestData.pMetadata */
             ContentLength = ExtractLengthFromMetaData(
-            pNetAppRequest->requestData.pMetadata,
-            pNetAppRequest->requestData.MetadataLen);
-            LOG_MESSAGE("[POST EventHandler] header - (%d) content length \r\n ", ContentLength);
+                    pNetAppRequest->requestData.pMetadata,
+                    pNetAppRequest->requestData.MetadataLen);
+            LOG_MESSAGE("\r [POST EventHandler] header - (%d) content length \r\n ", ContentLength);
             /* Allocate buffer to receive the entire content if needed */
         }
         pNetAppResponse->Status = SL_NETAPP_HTTP_RESPONSE_200_OK;
@@ -1036,7 +1059,7 @@ void * UpdateLedDisplay(void *arg)
 void AsyncEvtTimerHandler(sigval arg)
 {
     SignalEvent(AppEvent_TIMEOUT);
-    LOG_MESSAGE(" [Event] - Async event timer handler has received %x !!!!\r\n", arg);
+    LOG_MESSAGE("\r [Event] - Async event timer handler has received %x !!!!\r\n", arg);
 }
 
 //*****************************************************************************
@@ -1200,7 +1223,7 @@ int32_t SetSecuredAP(const uint8_t sec_en)
         memcpy(password, (char *)AP_SEC_PASSWORD, len);
         sl_WlanSet(SL_WLAN_CFG_AP_ID, SL_WLAN_AP_OPT_PASSWORD, len,
                    (uint8_t *)password);
-        LOG_MESSAGE(" Setting AP secured parameters\n\r");
+        LOG_MESSAGE("\r Setting AP secured parameters\n");
     }
     else
     {
@@ -1223,7 +1246,7 @@ int32_t StartConnection(void)
 {
     gIsWlanConnected = 0;
 
-    LOG_MESSAGE(" [App] StartConnection %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [App] StartConnection CurrentState: %d \n", g_CurrentState);
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
 
     return(0);
@@ -1242,7 +1265,7 @@ int32_t HandleConnection(void)
 {
     gIsWlanConnected = 1;
 
-    LOG_MESSAGE(" [App] HandleConnection %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [App] HandleConnection %d \n", g_CurrentState);
     return(0);
 }
 
@@ -1260,7 +1283,7 @@ int32_t HandleProvisioningComplete(void)
 {
     gStopInProgress = 0;
     gIsWlanConnected = 1;
-    LOG_MESSAGE(" [Provisioning] Provisioning Application Ended Successfully current=%d \r\n ", g_CurrentState);
+    LOG_MESSAGE("\r [Provisioning] Provisioning Application Ended Successfully current=%d \n ", g_CurrentState);
 
     /* [External configuration] - 
 	Stop the external provisioning process (if running) */
@@ -1272,7 +1295,7 @@ int32_t HandleProvisioningComplete(void)
     StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);
 
     if(!once) {
-        LOG_MESSAGE(" [ProvisioningComplete] Sending confo current=%d  \r\n", g_CurrentState);
+        LOG_MESSAGE("\r [ProvisioningComplete] Sending confo current=%d  \r\n", g_CurrentState);
         GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_ON);
         //int32_t             status = 0;
         //status = wlanConnect();
@@ -1280,6 +1303,7 @@ int32_t HandleProvisioningComplete(void)
         //    LOG_MESSAGE("\r\n wlanConnect error \r\n");
         //}
         //LOG_MESSAGE(" [TCPClient] Sending confo status=%d \r\n", status);
+        updateTime();
         int32_t ret = 0;
         ip_t dest;
         //memset(&dest, 0x0, sizeof(dest));
@@ -1358,7 +1382,7 @@ int32_t SendPingToGW(void)
     {
         gPingSuccess++;
     }
-    LOG_MESSAGE(
+    LOG_MESSAGE("\r [App] "
         "Reply from %d.%d.%d.%d: %s, "
         "Time=%dms, \tOverall Stat Success (%d/%d)\r\n",
         SL_IPV4_BYTE(ipV4.IpGateway,3),SL_IPV4_BYTE(ipV4.IpGateway,
@@ -1376,17 +1400,17 @@ int32_t SendPingToGW(void)
     sl_NetAppPing( &pingCommand, SL_AF_INET, &report, NULL );
 
     /* Get time from ntps */
-    LOG_MESSAGE("Timezone = %d.\n\r",ClockSync_getTimeZone());
+    LOG_MESSAGE("\r [App] Timezone = %d.\n\r",ClockSync_getTimeZone());
     struct tm netTime;
     int32_t status = 0;
     status = ClockSync_get(&netTime);
     if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
     {
-        LOG_MESSAGE("Localtime: %s/r/n", asctime(&netTime));
+        LOG_MESSAGE("\r [App] Localtime: %s/r/n", asctime(&netTime));
     }
     else
     {
-        LOG_MESSAGE("Error = %d\n\r",status);
+        LOG_MESSAGE("\r [App] Error = %d\n\r",status);
     }
 
     /* Set the time on the device - this needs to be done everytime to ensure the device doesn't lose track of the time on a power cycle. */
@@ -1413,7 +1437,7 @@ int32_t SendPingToGW(void)
     uint32_t numPackets = 1;
     ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
     if (ret != 0) {
-        LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
+        LOG_MESSAGE("\r [TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
         //Display_printf(display, 0, 0, "TCPClient failed");
     }
     else {
@@ -1436,7 +1460,7 @@ int32_t SendPingToGW(void)
 //*****************************************************************************
 int32_t HandleUserApplication(void)
 {
-    LOG_MESSAGE("[App] User Application Started %d \r\n ", g_CurrentState);
+    LOG_MESSAGE("\r [App] User Application Started %d \r\n ", g_CurrentState);
     gIsWlanConnected = 1;
     gWaitForConn = 0;
     /* as long as the device connected, run user application */
@@ -1477,17 +1501,17 @@ int32_t HandleUserApplication(void)
 
 
     /* Get time from ntps */
-    LOG_MESSAGE("Timezone = %d.\n\r",ClockSync_getTimeZone());
+    LOG_MESSAGE("\r [App] Timezone = %d.\n\r",ClockSync_getTimeZone());
     struct tm netTime;
     int32_t status = 0;
     status = ClockSync_get(&netTime);
     if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
     {
-        LOG_MESSAGE("Localtime: %s/r/n", asctime(&netTime));
+        LOG_MESSAGE("\r [App] Localtime: %s/r/n", asctime(&netTime));
     }
     else
     {
-        LOG_MESSAGE("Error = %d\n\r",status);
+        LOG_MESSAGE("\r [App] Error = %d\n\r",status);
     }
 
     StartAsyncEvtTimer(PING_TIMEOUT_SEC);
@@ -1523,7 +1547,7 @@ int32_t HandleWaitForIp(void)
 int32_t HandleDiscnctEvt(void)
 {
     gIsWlanConnected = 0;
-    LOG_MESSAGE("[Provisioning] HandleDiscnctEv: %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [Provisioning] HandleDiscnctEv: %d \n\r", g_CurrentState);
     StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);
     return(0);
 }
@@ -1541,9 +1565,9 @@ int32_t HandleDiscnctEvt(void)
 //*****************************************************************************
 int32_t CheckLanConnection(void)
 {
-    LOG_MESSAGE("[App] CheckLanConnection %d \r\n", g_CurrentState);
+    LOG_MESSAGE("\r [App] CheckLanConnection %d \r\n", g_CurrentState);
     if (forget ) { //&& !gWaitForConn) {
-        LOG_MESSAGE("[App] Force Provisioning Start\r\n");
+        LOG_MESSAGE("\r [App] Force Provisioning Start\r\n");
         returnToFactoryDefault();
         SignalEvent(AppEvent_PROVISIONING_STARTED);
         forget = false;
@@ -1553,7 +1577,7 @@ int32_t CheckLanConnection(void)
     /* Force Provisioning Application to run */
     if ((FORCE_PROVISIONING)&&(!gWaitForConn))
     {
-        LOG_MESSAGE("[App] Force Provisioning Start\r\n");
+        LOG_MESSAGE("\r [App] Force Provisioning Start\r\n");
         returnToFactoryDefault();
         SignalEvent(AppEvent_PROVISIONING_STARTED);
     }
@@ -1630,7 +1654,7 @@ int16_t SignalEvent(AppEvent event)
 {
     char msg = (char)event;
 
-    LOG_MESSAGE("[Provisioning] SignalEvent: %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [Signal] CurrentState: %d Event: %d \n", g_CurrentState, event);
     //
     //signal provisioning task about SL Event
     //
@@ -1927,6 +1951,10 @@ int32_t ProvisioningStart(void)
     {
         LOG_MESSAGE(" Provisioning Command Error, num:%d\r\n",retVal);
     }
+    else 
+    {
+        LOG_MESSAGE(" Provisioning Command retval, num:%d\r\n",retVal);
+    }
 
     return(0);
 }
@@ -2028,7 +2056,6 @@ void * ProvisioningTask(void *arg)
 //*****************************************************************************
 static void DisplayBanner(char * AppName)
 {
-
     LOG_MESSAGE("\n\n\n\r");
     LOG_MESSAGE("\t\t *************************************************\n\r");
     LOG_MESSAGE("\t\t            %s Application       \n\r", AppName);
@@ -2049,25 +2076,28 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
         Type = *pTlv; /* Type is one byte */
         pTlv++;
         TlvLen = *(_u16 *)pTlv; /* Length is two bytes */
+        LOG_MESSAGE("\r [POST] header type (%d) length (%d) looking for (%d) or (%d) \n", Type, TlvLen, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN);
         pTlv+=2;
         if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN)
         {
             _i32 LengthFieldValue=0;
+            LOG_MESSAGE("\r [POST] header - (%d) contentlen \n", LengthFieldValue);
             /* Found the right type, extract its value and return. */
             memcpy(&LengthFieldValue, pTlv, TlvLen);
-            LOG_MESSAGE("[POST] header - (%d) contentlen ", LengthFieldValue);
-            return LengthFieldValue;
         }
         else if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER) {
             free(email);
-            email = malloc(TlvLen);
+            email = malloc(TlvLen+1);
             memcpy(email, pTlv, TlvLen);
-            LOG_MESSAGE("[POST] header - (%s) configurer ", email);
+            LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
+            email[TlvLen] = '\0';
+            LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
         }
         else
         {
             /* Not the type we are looking for. Skip over the
              * value field to the next type. */
+            LOG_MESSAGE("\r [POST] header - (%d) unexpected type \n", Type);
             pTlv += TlvLen;
         }
     }
@@ -2102,6 +2132,35 @@ void gpioButtonFxn0(uint8_t index)
     }
     SignalEvent(AppEvent_RESTART);
     return;
+}
+
+void updateTime() {
+
+    /* Get time from ntps */
+    LOG_MESSAGE("\r [App] Timezone = %d.\n\r",ClockSync_getTimeZone());
+    struct tm netTime;
+    int32_t status = 0;
+    status = ClockSync_get(&netTime);
+    if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
+    {
+        LOG_MESSAGE("\r [App] Localtime: %s/r/n", asctime(&netTime));
+    }
+    else
+    {
+        LOG_MESSAGE("\r [App] Error = %d\n\r",status);
+    }
+
+    /* Set the time on the device - this needs to be done everytime to ensure the device doesn't lose track of the time on a power cycle. */
+    SlDateTime_t dateTime= {0};
+    dateTime.tm_sec = netTime.tm_sec;
+    dateTime.tm_min = netTime.tm_min;
+    dateTime.tm_hour = netTime.tm_hour;
+    dateTime.tm_day = netTime.tm_mday;
+    dateTime.tm_mon = netTime.tm_mon;
+    dateTime.tm_year = netTime.tm_year + 1900;
+    sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
+    /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) 
+
 }
 
 int32_t wlanConnect(void)

@@ -129,7 +129,7 @@ void *adcThread(void *arg0)
         if (retc == -1) {
             while (1);
         }
-        UART_PRINT("\rSem timer posted %d \n", voltage);
+        UART_PRINT("\r [ADC] Sem timer posted %d \n", voltage);
     }
 
     ADC_close(adc);

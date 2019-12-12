@@ -134,7 +134,7 @@ extern appControlBlock app_CB;
 char *ssidName;
 //char *deviceName;
 _u8 *myDeviceName;
-_u32 *email;
+char *email; //_u32
 
 void PrintIPAddress(unsigned char ipv6,
                     void *ip);

@@ -45,6 +45,9 @@ In case of using external provisioning configuration, implement the functions be
 //****************************************************************************
 #include <stdint.h>
 #include <ti/drivers/net/wifi/simplelink.h>
+#include <uart_term.h>
+
+bool extConfig = FALSE;
 
 /* Implement a function which starts the external provisioning process
  * for example, open a server socket, wait for connection and receive the profile credentials.
@@ -52,25 +55,27 @@ In case of using external provisioning configuration, implement the functions be
  * provisioning should be stopped */
 void StartExternalProvisioning()
 {
-  /* External provisioning start implementation */
+    /* External provisioning start implementation */
 
-  /* Stop internal provisioning  (just in case it is running) and stay in current role after stop */
-    sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_STOP, 0xFF, 0, NULL,
+    /* Stop internal provisioning  (just in case it is running) and stay in current role after stop */
+    sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_STOP, ROLE_AP, 0, NULL,
                         (uint32_t)NULL);
+    extConfig = TRUE;
 }
 
 /* Implement a function which stops the external provisioning process
  * for example, in case of AP provisioning or AP SC success, external provisioning is no longer needed */
 void StopExternalProvisioning()
 {
-  /* External provisioning stop implementation */
+    /* External provisioning stop implementation */
+    extConfig = FALSE;
+
 }
 
 /* Implement a function which check the current status of the external provisioning run */
 uint8_t IsActiveExternalConfiguration()
 {
     /* return TRUE in case external configuration is currently running, FALSE otherwise */
-    return(FALSE);
+    //return(FALSE);
+    return extConfig;
 }
-
-
