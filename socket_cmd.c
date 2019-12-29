@@ -128,7 +128,7 @@ int32_t TCPClient(uint8_t nb,
     abstime.tm_sec = 0;
     //abstime.tm_nsec = 0;
     clock_gettime(CLOCK_REALTIME, &abstime);
-    UART_PRINT("\r [TCPClient] abstime: %d \n", abstime.tm_sec);
+    //UART_PRINT("\r [TCPClient] abstime: %d \n", abstime.tm_sec);
 
     int32_t ret;
 
@@ -138,12 +138,12 @@ int32_t TCPClient(uint8_t nb,
     _i8 configOpt = SL_DEVICE_GENERAL_DATE_TIME;
     ret = sl_DeviceGet(SL_DEVICE_GENERAL, &configOpt, sizeof(SlDateTime_t), (_u8*)(&dateTime));
     ASSERT_ON_ERROR1(ret, DEVICE_ERROR);
-    UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
+    //UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
     //char timestr[20] = {0} ;
     _u8 *timestr = malloc(20);
     memset(timestr, 0x0, 20);
     sprintf(timestr, "%4d-%02d-%02dT%02d:%02d:%02dZ", dateTime.tm_year, dateTime.tm_mon+1, dateTime.tm_day, dateTime.tm_hour, dateTime.tm_min, dateTime.tm_sec); //RFC3339
-    UART_PRINT("\r [TCPClient] %s\n", timestr);
+    //UART_PRINT("\r [TCPClient] %s\n", timestr);
     
     /* The following block doesn't work - the variable send gets set to a -ive integer
     struct tm sse = {0};
@@ -177,11 +177,11 @@ int32_t TCPClient(uint8_t nb,
     myDeviceName = malloc(SL_NETAPP_MAX_DEVICE_URN_LEN);
     ret = sl_NetAppGet (SL_NETAPP_DEVICE_ID, SL_NETAPP_DEVICE_URN, &nameLen, (_u8 *)myDeviceName);
     ASSERT_ON_ERROR1(ret, NETAPP_ERROR);
-    UART_PRINT("\r [TCPClient] Devicename: %s - %d - %d \n", myDeviceName, sizeof(myDeviceName), strlen(myDeviceName));
+    //UART_PRINT("\r [TCPClient] Devicename: %s - %d - %d \n", myDeviceName, sizeof(myDeviceName), strlen(myDeviceName));
     //free(deviceName);
     //deviceName = malloc(strlen(my_device_name));
     //strcpy(deviceName, my_device_name);
-    UART_PRINT("\r [TCPClient] 1:%s 2:%s \n", myDeviceName, ssidName);
+    //UART_PRINT("\r [TCPClient] 1:%s 2:%s \n", myDeviceName, ssidName);
     // on device restart ssidName is unallocated so need to reallocate it and set it with the name got from sl_WlanProfileGet
     if (strlen(ssidName) == 0) {
         _i16 gStatus, nameLength;
@@ -210,18 +210,18 @@ int32_t TCPClient(uint8_t nb,
 
     strncpy(dn, myDeviceName, sizeof(dn));
     dn[4] = '\0';
-    UART_PRINT("\r [TCPClient] dn : %s \n", dn);
+    //UART_PRINT("\r [TCPClient] dn : %s \n", dn);
     strncpy(ss, ssidName, sizeof(ss));
     ss[3] = '\0';
-    UART_PRINT("\r [TCPClient] ss: %s \n", ss);
+    //UART_PRINT("\r [TCPClient] ss: %s \n", ss);
     strncpy(ch, dn, 5);
     strncat(ch, ss, 4);
     ch[7] = '\0';
     ch[8] = '\0';
-    UART_PRINT("\r [TCPClient] ch: %s \n", ch);
+    //UART_PRINT("\r [TCPClient] ch: %s \n", ch);
     int hashi;
     hashi = abs(hashf(ch));
-    UART_PRINT("\r [TCPClient] unhashed: %s size: %d hashed: %d \n", ch, strlen(ch), hashi);
+    //UART_PRINT("\r [TCPClient] unhashed: %s size: %d hashed: %d \n", ch, strlen(ch), hashi);
     loco = cJSON_CreateObject();
     switch(portNumber)
     {
@@ -317,14 +317,14 @@ int32_t TCPClient(uint8_t nb,
         UART_PRINT("\r [TCPClient] sa !NULL  %d \n", sa->sa_family);
     }
     PrintIPAddress(FALSE, (void*)&ipAddress.ipv4);
-    UART_PRINT("\r [TCPClient} Setting up socket ****\n");
+    //UART_PRINT("\r [TCPClient} Setting up socket ****\n");
     /* Get socket descriptor - this would be the
      * socket descriptor for the TCP session.
      */
     sock = sl_Socket(sa->sa_family, SL_SOCK_STREAM, TCP_PROTOCOL_FLAGS);
     //ASSERT_ON_ERROR1(sock, SL_SOCKET_ERROR);
     ASSERT_ON_ERROR(sock);
-    UART_PRINT("\r [TCPClient] ENTER SSL****\n");
+    //UART_PRINT("\r [TCPClient] ENTER SSL****\n");
 
 #ifdef SECURE_SOCKET
 
@@ -337,7 +337,7 @@ int32_t TCPClient(uint8_t nb,
 
         sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
     }
-    UART_PRINT("\r [TCPClient] *** SSL ****\n");
+    //UART_PRINT("\r [TCPClient] *** SSL ****\n");
     /* Set the following to enable Server Authentication */
     //sl_SetSockOpt(sock,SL_SOL_SOCKET,SL_SO_SECURE_FILES_CA_FILE_NAME, ROOT_CA_CERT_FILE, strlen(ROOT_CA_CERT_FILE));
     // Following mask doesn't seem to make a difference
@@ -367,7 +367,7 @@ int32_t TCPClient(uint8_t nb,
      */
     if(TRUE == nb)
     {
-        UART_PRINT("\r [TCPClient] nonblocking****\n");
+        //UART_PRINT("\r [TCPClient] nonblocking****\n");
         nonBlocking = TRUE;
         status =
             sl_SetSockOpt(sock, SL_SOL_SOCKET, SL_SO_NONBLOCKING, &nonBlocking,
@@ -386,7 +386,7 @@ int32_t TCPClient(uint8_t nb,
 
     while(status < 0)
     {
-        UART_PRINT("\r [TCPClient] ***sl_Connect**** \n");
+        //UART_PRINT("\r [TCPClient] ***sl_Connect**** \n");
         /* Calling 'sl_Connect' followed by server's
          * 'sl_Accept' would start session with
          * the TCP server. */
@@ -511,9 +511,9 @@ int32_t TCPClient(uint8_t nb,
         UART_PRINT("\r [TCPClient] Received %u packets (%u bytes) successfully\n",(rcvd_bytes/BUF_LEN), rcvd_bytes);
         uint8_t j = 0;
         for(j = 0; j < rcvd_bytes; ++j) {
-            UART_PRINT("%c", recd_data[j]);
+            UART_PRINT(" %c ", recd_data[j]);
         }
-        UART_PRINT("\r [TCPClient] End \n");
+        //UART_PRINT("\r [TCPClient] End \n");
     }
     /* Calling 'close' with the socket descriptor,
      * once operation is finished. */

@@ -154,6 +154,7 @@ typedef enum
     AppEvent_TIMEOUT,
     AppEvent_ERROR,
     AppEvent_RESTART,
+    AppEvent_STUCK,
     AppEvent_MAX
 
 }AppEvent;
@@ -229,6 +230,7 @@ LedState gLedDisplayState = LedState_CONNECTION;
 timer_t gTimer;
 volatile bool forget = false;
 bool once = false;
+bool stuck = false;
 
 const char *Roles[] = {"STA","STA","AP","P2P"};
 const char *WlanStatus[] = {"DISCONNECTED","SCANING","CONNECTING","CONNECTED"};
@@ -236,7 +238,7 @@ const char *WlanStatus[] = {"DISCONNECTED","SCANING","CONNECTING","CONNECTED"};
 /* Application lookup/transition table */
 const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
 {
-        /* AppState_STARTING */
+    /* AppState_STARTING */
     {
         /* Event: AppEvent_STARTED */ {StartConnection,
                                        AppState_WAIT_FOR_CONNECTION     },
@@ -251,7 +253,8 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_TIMEOUT */ {ReportError, AppState_ERROR          },
         /* Event: AppEvent_ERROR */ {ReportError, AppState_ERROR            },
         /* Event: AppEvent_RESTART */ {ProvisioningStart,
-                                       AppState_PROVISIONING_IN_PROGRESS}
+                                       AppState_PROVISIONING_IN_PROGRESS},
+        /* Event: AppEvent_STUCK */ {DoNothing, AppState_STARTING           }
     },
     /* AppState_WAIT_FOR_CONNECTION */
     {
@@ -270,15 +273,17 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* AppEvent_PROVISIONING_SUCCESS */ 
         {DoNothing, AppState_WAIT_FOR_CONNECTION                  },
         /* AppEvent_PROVISIONING_STOPPED */ 
-         {CheckLanConnection, AppState_WAIT_FOR_CONNECTION        },
+        {CheckLanConnection, AppState_WAIT_FOR_CONNECTION         },
         /* AppEvent_PROVISIONING_WAIT_CONN */ 
         {DoNothing, AppState_WAIT_FOR_CONNECTION                  },
         /* Event: AppEvent_TIMEOUT */
-         {ProvisioningStart, AppState_PROVISIONING_IN_PROGRESS    },
+        {ProvisioningStart, AppState_PROVISIONING_IN_PROGRESS     },
         /* Event: AppEvent_ERROR */ 
         {ProvisioningStart, AppState_PROVISIONING_IN_PROGRESS     },
         /* Event: AppEvent_RESTART */ 
-        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION      }
+        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION      },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING           }
     },
     /* AppState_WAIT_FOR_IP */
     {
@@ -304,8 +309,9 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_ERROR */
          {ReportError, AppState_ERROR                                   },
         /* Event: AppEvent_RESTART */ 
-        {ProcessRestartRequest,
-                                       AppState_WAIT_FOR_CONNECTION     }
+        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION     },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING           }
     },
     /* AppState_PINGING_GW */
     {
@@ -314,7 +320,7 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_CONNECTED */ 
         {HandleWaitForIp, AppState_WAIT_FOR_IP                           },
         /* Event: AppEvent_IP_ACQUIRED */
-         {CheckInternetConnection, AppState_PINGING_GW                   },
+        {CheckInternetConnection, AppState_PINGING_GW                    },
         /* Event: AppEvent_DISCONNECT */ 
         {HandleDiscnctEvt, AppState_WAIT_FOR_CONNECTION                  },
         /* Event: AppEvent_PING_COMPLETE */ 
@@ -328,11 +334,13 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* AppEvent_PROVISIONING_WAIT_CONN */ 
         {DoNothing, AppState_PINGING_GW                                  },
         /*  Event: AppEvent_TIMEOUT */
-         {SendPingToGW, AppState_PINGING_GW                              },
+        {SendPingToGW, AppState_PINGING_GW                               },
         /* Event: AppEvent_ERROR */ 
         {ReportError, AppState_ERROR                                     },
         /* Event: AppEvent_RESTART */ 
-        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION             }
+        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION             },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING             }
     },
     /* AppState_PROVISIONING_IN_PROGRESS  */
     {
@@ -349,17 +357,19 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* AppEvent_PROVISIONING_STARTED */
          {DoNothing, AppState_PROVISIONING_IN_PROGRESS                   },
         /* AppEvent_PROVISIONING_SUCCESS */ 
-        {HandleProvisioningComplete, AppState_PROVISIONING_WAIT_COMPLETE},
+        {HandleProvisioningComplete, AppState_PROVISIONING_WAIT_COMPLETE },
         /* AppEvent_PROVISIONING_STOPPED */
-         {HandleProvisioningComplete, AppState_PINGING_GW               },
+        {HandleProvisioningComplete, AppState_PINGING_GW                },
         /* AppEvent_PROVISIONING_WAIT_CONN */
-         {DoNothing, AppState_WAIT_FOR_CONNECTION                       },
+        {DoNothing, AppState_WAIT_FOR_CONNECTION                        },
         /* Event: AppEvent_TIMEOUT */ 
         {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION            },
         /* Event: AppEvent_ERROR */
         {ReportError, AppState_ERROR                                    },
         /* Event: AppEvent_RESTART */ 
-        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION            }
+        {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION            },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING           }
     
     },
     /* AppState_PROVISIONING_WAIT_COMPLETE */
@@ -387,7 +397,9 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_ERROR */
         {ReportError, AppState_ERROR },
         /* Event: AppEvent_RESTART */ 
-        {ProcessRestartRequest, AppState_PROVISIONING_WAIT_COMPLETE }
+        {ProcessRestartRequest, AppState_PROVISIONING_WAIT_COMPLETE },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING           }
     },
     /* AppState_ERROR */
     /* we will restart connection for all errors */
@@ -415,7 +427,9 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_ERROR */
          {ReportError,AppState_WAIT_FOR_CONNECTION     },
         /* Event: AppEvent_RESTART */ 
-        {ReportError, AppState_WAIT_FOR_CONNECTION     }
+        {ReportError, AppState_WAIT_FOR_CONNECTION     },
+        /* Event: AppEvent_STUCK */ 
+        {DoNothing, AppState_STARTING           }
     }
 };
 
@@ -755,7 +769,7 @@ void SimpleLinkNetAppEventHandler(SlNetAppEvent_t *pNetAppEvent)
     switch(pNetAppEvent->Id)
     {
     case SL_NETAPP_EVENT_IPV4_ACQUIRED:
-        LOG_MESSAGE("[NETAPP EVENT] IP Acquired: IP=%d.%d.%d.%d , "
+        LOG_MESSAGE("\r [NETAPP EVENT] IP Acquired: IP=%d.%d.%d.%d , "
             "Gateway=%d.%d.%d.%d\n\r",
             SL_IPV4_BYTE(pNetAppEvent->Data.IpAcquiredV4.Ip,3),
             SL_IPV4_BYTE(pNetAppEvent->Data.IpAcquiredV4.Ip,2),
@@ -862,6 +876,54 @@ void SimpleLinkSockEventHandler(SlSockEvent_t *pSock)
     default:
         LOG_MESSAGE("[SOCK EVENT] - Unexpected Event [%x0x]\n\n",pSock->Event);
         break;
+    }
+}
+
+//*****************************************************************************
+//
+//! \brief  This function handles init-complete event from SL
+//!
+//! \param  status - Mode the device is configured or error if initialization
+//!                     failed
+//!
+//! \return None
+//!
+//*****************************************************************************
+void SimpleLinkInitCallback(uint32_t status,
+                            SlDeviceInitInfo_t *DeviceInitInfo)
+{
+    if ((int32_t)status == SL_ERROR_RESTORE_IMAGE_COMPLETE)
+    {
+        LOG_MESSAGE(
+            "\r\n**********************************\r\nReturn to"
+            " Factory Default been Completed\r\nPlease RESET the Board\r\n"
+            "**********************************\r\n");
+        gLedDisplayState = LedState_FACTORY_DEFAULT;
+        while(1)
+        {
+            ;
+        }
+    }
+
+    ASSERT_ON_ERROR((int32_t)status);
+
+
+    LOG_MESSAGE("Device started in %s role\n\r", (0 == status) ? "Station" :\
+        (2 == status) ? "AP" : ((3 == status) ? "P2P" : "Start Role error"));
+
+    if(ROLE_STA == status)
+    {
+        gRole = ROLE_STA;
+        SignalEvent(AppEvent_STARTED);
+    }
+    else if (ROLE_AP == status)
+    {
+        gRole = ROLE_AP;
+        SignalEvent(AppEvent_RESTART);
+    }
+    else
+    {
+        SignalEvent(AppEvent_ERROR);
     }
 }
 
@@ -1118,10 +1180,12 @@ void StopAsyncEvtTimer(void)
 int32_t ReportError(void)
 {
     LOG_MESSAGE(
-        "[Provisioning] Provisioning Application Error - Restarting \r\n ");
+        "\r [Provisioning] Provisioning Application Error - Restarting \r\n ");
     gIsWlanConnected = 0;
     sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_STOP, ROLE_AP, 0, NULL,
                         (uint32_t)NULL);
+
+
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
 
     return(0);
@@ -1139,9 +1203,38 @@ int32_t ReportError(void)
 //*****************************************************************************
 int32_t ProcessRestartRequest(void)
 {
+    LOG_MESSAGE("\r ProcessRestartRequest stuck=%d ... \n", stuck);
+    if (stuck) 
+    {
+        StopAsyncEvtTimer();
+        int32_t            iRetVal = 0;
+        /* Re-initialize Simple Link */
+        sl_Stop(SL_STOP_TIMEOUT);
+        if((iRetVal =
+                sl_Start(NULL, NULL, (P_INIT_CALLBACK)SimpleLinkInitCallback)) < 0)
+        {
+            LOG_MESSAGE("sl_Start Failed\r\n");
+            if (iRetVal == SL_ERROR_RESTORE_IMAGE_COMPLETE)
+            {
+                LOG_MESSAGE(
+                    "\r\n**********************************\r\n"
+                    "Return to Factory Default been Completed\r\n"
+                    "Please RESET the Board\r\n"
+                    "**********************************\r\n");
+                gLedDisplayState = LedState_FACTORY_DEFAULT;
+            }
+            while(1)
+            {
+                ;
+            }
+        }
+        stuck = false;
+        gIsWlanConnected = 0;
+        return(0);
+    }
     gIsWlanConnected = 0;
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
-
+    
     /* [External configuration] - 
 	 * Stop the external provisioning process (if running).
      * Start will be executed after 
@@ -1246,6 +1339,7 @@ int32_t StartConnection(void)
 {
     gIsWlanConnected = 0;
 
+    GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_OFF);
     LOG_MESSAGE("\r [App] StartConnection CurrentState: %d \n", g_CurrentState);
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
 
@@ -1382,6 +1476,18 @@ int32_t SendPingToGW(void)
     {
         gPingSuccess++;
     }
+    else
+    {
+        LOG_MESSAGE("\r [App] Ping error ... reconnecting ... \n");
+        //sl_Stop(SL_STOP_TIMEOUT);
+        //gRole = sl_Start(NULL, NULL, NULL);
+        stuck = true;
+        //SignalEvent(AppEvent_STUCK);
+        GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_ON);
+        SignalEvent(AppEvent_RESTART);
+        //SignalEvent(AppEvent_STARTED);
+        return(0); // can't return -1 as the event hander will fail
+    }
     LOG_MESSAGE("\r [App] "
         "Reply from %d.%d.%d.%d: %s, "
         "Time=%dms, \tOverall Stat Success (%d/%d)\r\n",
@@ -1395,6 +1501,7 @@ int32_t SendPingToGW(void)
          report.PacketsReceived) ? report.MinRoundTime : 0,
         gPingSuccess, gPingSent);
     
+
     // stop ping process
     pingCommand.Ip = 0; 
     sl_NetAppPing( &pingCommand, SL_AF_INET, &report, NULL );
@@ -1438,6 +1545,14 @@ int32_t SendPingToGW(void)
     ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
     if (ret != 0) {
         LOG_MESSAGE("\r [TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
+        LOG_MESSAGE("\r [App] TCPClient error ... reconnecting ... \n");
+        //sl_Stop(100);
+        //gRole = sl_Start(NULL, NULL, NULL);
+        //SignalEvent(AppEvent_STUCK);
+        stuck = true;
+        SignalEvent(AppEvent_RESTART);
+        //SignalEvent(AppEvent_STARTED);
+        return(0);
         //Display_printf(display, 0, 0, "TCPClient failed");
     }
     else {
@@ -1530,7 +1645,7 @@ int32_t HandleUserApplication(void)
 //*****************************************************************************
 int32_t HandleWaitForIp(void)
 {
-    LOG_MESSAGE("[Provisioning] HandleWaitForIp: %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [Provisioning] HandleWaitForIp: %d \n", g_CurrentState);
     StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC * 3);
     return(0);
 }
@@ -1566,7 +1681,7 @@ int32_t HandleDiscnctEvt(void)
 int32_t CheckLanConnection(void)
 {
     LOG_MESSAGE("\r [App] CheckLanConnection %d \r\n", g_CurrentState);
-    if (forget ) { //&& !gWaitForConn) {
+    if (forget) { //&& !gWaitForConn) {
         LOG_MESSAGE("\r [App] Force Provisioning Start\r\n");
         returnToFactoryDefault();
         SignalEvent(AppEvent_PROVISIONING_STARTED);
@@ -1583,7 +1698,6 @@ int32_t CheckLanConnection(void)
     }
     else
     {
-
         /* Handle User application */
         SignalEvent(AppEvent_PROVISIONING_STOPPED);
     }
@@ -1602,7 +1716,7 @@ int32_t CheckLanConnection(void)
 //*****************************************************************************
 int32_t CheckInternetConnection(void)
 {
-    LOG_MESSAGE(" [Provisioning] CheckInternetConnection %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [Provisioning] CheckInternetConnection %d \n\r", g_CurrentState);
     /* Connect to cloud if enabled */
     
     return(0);
@@ -1619,7 +1733,11 @@ int32_t CheckInternetConnection(void)
 //*****************************************************************************
 int32_t DoNothing(void)
 {
-    LOG_MESSAGE("[Provisioning] DoNothing: %d \n\r", g_CurrentState);
+    LOG_MESSAGE("\r [Provisioning] DoNothing: %d \n", g_CurrentState);
+    /*if (forget) {
+        StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
+        forget = false;
+    }*/
     return(0);
 }
 
@@ -1654,64 +1772,16 @@ int16_t SignalEvent(AppEvent event)
 {
     char msg = (char)event;
 
-    LOG_MESSAGE("\r [Signal] CurrentState: %d Event: %d \n", g_CurrentState, event);
     //
     //signal provisioning task about SL Event
     //
     mq_send(gProvisioningSMQueue, &msg, 1, 0);
+    
+    LOG_MESSAGE("\r [Signal] CurrentState: %d Event: %d \n", g_CurrentState, event);
 
     return(0);
 }
 
-
-
-//*****************************************************************************
-//
-//! \brief  This function handles init-complete event from SL
-//!
-//! \param  status - Mode the device is configured or error if initialization
-//!                     failed
-//!
-//! \return None
-//!
-//*****************************************************************************
-void SimpleLinkInitCallback(uint32_t status,
-                            SlDeviceInitInfo_t *DeviceInitInfo)
-{
-    if ((int32_t)status == SL_ERROR_RESTORE_IMAGE_COMPLETE)
-    {
-        LOG_MESSAGE(
-            "\r\n**********************************\r\nReturn to"
-            " Factory Default been Completed\r\nPlease RESET the Board\r\n"
-            "**********************************\r\n");
-        gLedDisplayState = LedState_FACTORY_DEFAULT;
-        while(1)
-        {
-            ;
-        }
-    }
-
-    ASSERT_ON_ERROR((int32_t)status);
-
-
-    LOG_MESSAGE("Device started in %s role\n\r", (0 == status) ? "Station" :\
-        (2 == status) ? "AP" : ((3 == status) ? "P2P" : "Start Role error"));
-
-    if(ROLE_STA == status)
-    {
-        gRole = ROLE_STA;
-        SignalEvent(AppEvent_STARTED);
-    }
-    else if (ROLE_AP == status)
-    {
-        gRole = ROLE_AP;
-        SignalEvent(AppEvent_RESTART);
-    }
-    else
-    {
-        SignalEvent(AppEvent_ERROR);
-    }
-}
 
 //*****************************************************************************
 //
@@ -1851,6 +1921,22 @@ int32_t ProvisioningStart(void)
     LOG_MESSAGE("\n\r\n\r\n\r==================================\n\r");
     LOG_MESSAGE(" Provisioning Example Ver. %s\n\r",APPLICATION_VERSION);
     LOG_MESSAGE("==================================\n\r");
+
+    if (forget) 
+    {
+        _i16 Status;
+        Status = sl_WlanProfileDel(SL_WLAN_DEL_ALL_PROFILES);
+        if( Status < 0 )
+        {
+            LOG_MESSAGE("\r\n Unable to delete all profiles %d \n\r", Status);
+        }
+        else {
+            LOG_MESSAGE("\r\n Deleted all profiles %d \n\r", Status);
+            gIsWlanConnected = 0;
+        }
+        StopAsyncEvtTimer();
+        forget = false;
+    }
 
     status = GetSecureStatus();
     if ( (SECURED_AP_ENABLE) || (status != SECURED_AP_ENABLE))
@@ -2029,7 +2115,7 @@ void * ProvisioningTask(void *arg)
         {
             if (pEntry->p_evtHndl() < 0)
             {
-                LOG_MESSAGE("Event handler failed..!! \n\r");
+                LOG_MESSAGE("Event handler failed..!! current: %d event: %d \n\r", g_CurrentState, event);
                 while(1)
                 {
                     ;
@@ -2076,7 +2162,7 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
         Type = *pTlv; /* Type is one byte */
         pTlv++;
         TlvLen = *(_u16 *)pTlv; /* Length is two bytes */
-        LOG_MESSAGE("\r [POST] header type (%d) length (%d) looking for (%d) or (%d) \n", Type, TlvLen, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN);
+        //LOG_MESSAGE("\r [POST] header type (%d) length (%d) looking for (%d) or (%d) \n", Type, TlvLen, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN);
         pTlv+=2;
         if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN)
         {
@@ -2089,15 +2175,15 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
             free(email);
             email = malloc(TlvLen+1);
             memcpy(email, pTlv, TlvLen);
-            LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
+            //LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
             email[TlvLen] = '\0';
-            LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
+            //LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
         }
         else
         {
             /* Not the type we are looking for. Skip over the
              * value field to the next type. */
-            LOG_MESSAGE("\r [POST] header - (%d) unexpected type \n", Type);
+            //LOG_MESSAGE("\r [POST] header - (%d) unexpected type \n", Type);
             pTlv += TlvLen;
         }
     }
@@ -2122,15 +2208,29 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
 */
 void gpioButtonFxn0(uint8_t index)
 {
-    LOG_MESSAGE("\n\rGPIO button SW2 pressed .. \n\r");
+    if (forget) {
+        LOG_MESSAGE("\n\r Ignoring GPIO button SW2 press .. \n\r");
+        return;
+    } 
+    else {
+        LOG_MESSAGE("\n\rGPIO button SW2 pressed .. \n\r");
+    }
     forget = true;
-    _i16 Status;
+    /*_i16 Status;
     Status = sl_WlanProfileDel(SL_WLAN_DEL_ALL_PROFILES);
     if( Status < 0 )
     {
         LOG_MESSAGE("\r\n Unable to delete all profiles %d \n\r", Status);
     }
+    else {
+        LOG_MESSAGE("\r\n Deleted all profiles %d \n\r", Status);
+        gIsWlanConnected = 0;
+    }*/
+    LOG_MESSAGE("\r\n Restarting ... \n\r");
     SignalEvent(AppEvent_RESTART);
+    //SignalEvent(AppEvent_STUCK);
+    //StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
+    //StartAsyncEvtTimer(RECONNECTION_ESTABLISHED_TIMEOUT_SEC);  
     return;
 }
 
