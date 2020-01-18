@@ -138,11 +138,15 @@ int32_t TCPClient(uint8_t nb,
     _i8 configOpt = SL_DEVICE_GENERAL_DATE_TIME;
     ret = sl_DeviceGet(SL_DEVICE_GENERAL, &configOpt, sizeof(SlDateTime_t), (_u8*)(&dateTime));
     ASSERT_ON_ERROR1(ret, DEVICE_ERROR);
-    //UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
+    UART_PRINT("\r [TCPClient] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
+    if(dateTime.tm_mon > 12) 
+    {
+        dateTime.tm_mon = 12;
+    }
     //char timestr[20] = {0} ;
     _u8 *timestr = malloc(20);
     memset(timestr, 0x0, 20);
-    sprintf(timestr, "%4d-%02d-%02dT%02d:%02d:%02dZ", dateTime.tm_year, dateTime.tm_mon+1, dateTime.tm_day, dateTime.tm_hour, dateTime.tm_min, dateTime.tm_sec); //RFC3339
+    sprintf(timestr, "%4d-%02d-%02dT%02d:%02d:%02dZ", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day, dateTime.tm_hour, dateTime.tm_min, dateTime.tm_sec); //RFC3339
     //UART_PRINT("\r [TCPClient] %s\n", timestr);
     
     /* The following block doesn't work - the variable send gets set to a -ive integer

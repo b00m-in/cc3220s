@@ -1206,10 +1206,14 @@ int32_t ProcessRestartRequest(void)
     LOG_MESSAGE("\r ProcessRestartRequest stuck=%d ... \n", stuck);
     if (stuck) 
     {
+        LOG_MESSAGE("\r ProcessRestartRequest stopping asynceventtimer \n");
         StopAsyncEvtTimer();
+        LOG_MESSAGE("\r ProcessRestartRequest stopped asynceventtimer \n");
         int32_t            iRetVal = 0;
         /* Re-initialize Simple Link */
+        LOG_MESSAGE("\r ProcessRestartRequest stopping simplelink \n");
         sl_Stop(SL_STOP_TIMEOUT);
+        LOG_MESSAGE("\r ProcessRestartRequest stopped simplelink \n");
         if((iRetVal =
                 sl_Start(NULL, NULL, (P_INIT_CALLBACK)SimpleLinkInitCallback)) < 0)
         {
@@ -1456,7 +1460,7 @@ int32_t SendPingToGW(void)
     pingCommand.PingSize = 150;           
 
     /* delay between pings, in milliseconds     */    
-    pingCommand.PingIntervalTime = 60000;    
+    pingCommand.PingIntervalTime = 120000;    
 
     /* timeout for every ping in milliseconds   */    
     pingCommand.PingRequestTimeout = 1000; 
@@ -1513,29 +1517,36 @@ int32_t SendPingToGW(void)
     status = ClockSync_get(&netTime);
     if ((status == 0) || (status == CLOCKSYNC_ERROR_INTERVAL))
     {
-        LOG_MESSAGE("\r [App] Localtime: %s/r/n", asctime(&netTime));
+        LOG_MESSAGE("\r [SendPingToGW] Localtime: %s/r/n", asctime(&netTime));
     }
     else
     {
-        LOG_MESSAGE("\r [App] Error = %d\n\r",status);
+        LOG_MESSAGE("\r [SendPingToGW] Error = %d\n\r",status);
     }
 
+    int32_t ret = 0;
     /* Set the time on the device - this needs to be done everytime to ensure the device doesn't lose track of the time on a power cycle. */
     SlDateTime_t dateTime= {0};
     dateTime.tm_sec = netTime.tm_sec;
     dateTime.tm_min = netTime.tm_min;
     dateTime.tm_hour = netTime.tm_hour;
     dateTime.tm_day = netTime.tm_mday;
-    dateTime.tm_mon = netTime.tm_mon;
+    dateTime.tm_mon = netTime.tm_mon + 1;
     dateTime.tm_year = netTime.tm_year + 1900;
+    //LOG_MESSAGE("\r [SendPingToGW] year: %d, month: %d, day: %d \n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
     sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
+    //LOG_MESSAGE("\r [SendPingToGW] SlDateTime_t: %d-%d-%d\n", dateTime.tm_year, dateTime.tm_mon, dateTime.tm_day);
+    //SlDateTime_t dateTime1= {0};
+    //_i8 configOpt = SL_DEVICE_GENERAL_DATE_TIME;
+    //ret = sl_DeviceGet(SL_DEVICE_GENERAL, &configOpt, sizeof(SlDateTime_t), (uint8_t *)(&dateTime1));
+    //LOG_MESSAGE("\r [SendPingToGW] SlDateTime_t1: %d-%d-%d\n", dateTime1.tm_year, dateTime1.tm_mon, dateTime1.tm_day);
+    //ASSERT_ON_ERROR1(ret, DEVICE_ERROR);
     /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) 
     {
         LOG_MESSAGE("settime error \n\r");
     }*/
 
     GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_ON);
-    int32_t ret = 0;
     ip_t dest;
     //memset(&dest, 0x0, sizeof(dest));
     dest.ipv4 = DEST_IP_ADDR;
@@ -1718,6 +1729,12 @@ int32_t CheckInternetConnection(void)
 {
     LOG_MESSAGE("\r [Provisioning] CheckInternetConnection %d \n\r", g_CurrentState);
     /* Connect to cloud if enabled */
+    // Occassionally when in AppState_PINGING_GW, an AppEvent_IP_ACQUIRED is encountered
+    if (g_CurrentState == 3)
+    {
+        /* Handle User application */
+        SignalEvent(AppEvent_PROVISIONING_STOPPED);
+    }
     
     return(0);
 }
@@ -2256,7 +2273,7 @@ void updateTime() {
     dateTime.tm_min = netTime.tm_min;
     dateTime.tm_hour = netTime.tm_hour;
     dateTime.tm_day = netTime.tm_mday;
-    dateTime.tm_mon = netTime.tm_mon;
+    dateTime.tm_mon = netTime.tm_mon + 1;
     dateTime.tm_year = netTime.tm_year + 1900;
     sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
     /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) 
