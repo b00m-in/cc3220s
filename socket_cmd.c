@@ -19,8 +19,8 @@
 #ifdef SECURE_SOCKET
 #define TCP_PROTOCOL_FLAGS    SL_SEC_SOCKET
 #define ROOT_CA_CERT_FILE     "dst root ca x3" //"dummy-root-ca-cert" //
-#define PRIVATE_KEY_FILE      "b00m-trusted-cert-key" //"dummy-trusted-cert-key" //
-#define TRUSTED_CERT_FILE     "b00m-trusted-cert" //"dummy-trusted-cert" //
+#define PRIVATE_KEY_FILE      "pv-b00m-trusted-cert-key" //"dummy-trusted-cert-key" //
+#define TRUSTED_CERT_FILE     "pv-b00m-trusted-cert" //"dummy-trusted-cert" //
 #define TRUSTED_CERT_CHAIN    "trusted-chain.pem"
 
 #define DEVICE_YEAR                 (2019)
@@ -236,6 +236,7 @@ int32_t TCPClient(uint8_t nb,
             cJSON_AddStringToObject(loco, "ssid", ssidName);
             cJSON_AddNumberToObject(loco, "hash", hashi);
             cJSON_AddStringToObject(loco, "email", email);
+            cJSON_AddStringToObject(loco, "coords", coords);
             break;
         case 38981: // packet
             //cJSON_AddNumberToObject(loco, "id", 43672934);
@@ -247,8 +248,8 @@ int32_t TCPClient(uint8_t nb,
             cJSON_AddNumberToObject(loco, "voltage", voltage);
             pthread_mutex_unlock(&voltageMutex);
             cJSON_AddNumberToObject(loco, "freq", 50.3);
-            cJSON_AddNumberToObject(loco, "lat", 13.4538);
-            cJSON_AddNumberToObject(loco, "lng", 77.6283);
+            //cJSON_AddNumberToObject(loco, "lat", 13.4538);
+            //cJSON_AddNumberToObject(loco, "lng", 77.6283);
             break;
         default:
             UART_PRINT("\r [TCPClient] Unexpected port number %d \r\n", portNumber);

@@ -135,6 +135,8 @@ char *ssidName;
 //char *deviceName;
 _u8 *myDeviceName;
 char *email; //_u32
+char *coords; //_u32
+char *temp;
 
 void PrintIPAddress(unsigned char ipv6,
                     void *ip);

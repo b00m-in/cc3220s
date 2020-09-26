@@ -118,7 +118,6 @@
 #define ROLE_STA 0
 #define ROLE_AP  2
 
-
 /* Application's states */
 typedef enum
 {
@@ -2184,23 +2183,39 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
         if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN)
         {
             _i32 LengthFieldValue=0;
-            LOG_MESSAGE("\r [POST] header - (%d) contentlen \n", LengthFieldValue);
+            //LOG_MESSAGE("\r [POST] header - (%d) contentlen \n", LengthFieldValue);
             /* Found the right type, extract its value and return. */
             memcpy(&LengthFieldValue, pTlv, TlvLen);
+            pTlv += TlvLen;
         }
         else if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER) {
+            // using the referer header to get owner credentials from the provisioning app
             free(email);
             email = malloc(TlvLen+1);
             memcpy(email, pTlv, TlvLen);
             //LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
             email[TlvLen] = '\0';
-            //LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
+            LOG_MESSAGE("\r [POST] header - configurer (%s) - len - (%d)\n ", email, TlvLen);
+            pTlv += TlvLen;
+        }
+        else if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_ETAG) {
+            // using the etag header to get gps coords from the provisioning app
+            free(coords);
+            coords = malloc(TlvLen+1);
+            memcpy(coords, pTlv, TlvLen);
+            coords[TlvLen] = '\0';
+            LOG_MESSAGE("\r [POST] header - location (%s) - len - (%d)\n ", coords, TlvLen);
+            pTlv += TlvLen;
         }
         else
         {
             /* Not the type we are looking for. Skip over the
              * value field to the next type. */
-            //LOG_MESSAGE("\r [POST] header - (%d) unexpected type \n", Type);
+            free(temp);
+            temp = malloc(TlvLen+1);
+            memcpy(temp, pTlv, TlvLen);  
+            temp[TlvLen] = '\0';
+            LOG_MESSAGE("\r [POST] header - (%s)  unexpected type - len - (%d) \n", temp, TlvLen);
             pTlv += TlvLen;
         }
     }
