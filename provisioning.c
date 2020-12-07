@@ -91,8 +91,12 @@
 #define PING_TIMEOUT_SEC                        (1)    
 
 /* Enable UART Log */
-#define LOG_MESSAGE_ENABLE
+//#define LOG_MESSAGE_ENABLE
+#ifdef LOG_MESSAGE_ENABLE
 #define LOG_MESSAGE UART_PRINT
+#else
+#define LOG_MESSAGE NADA
+#endif
 
 #define SC_KEY_ENABLE       (0)
 #define SECURED_AP_ENABLE   (0)
@@ -208,8 +212,11 @@ pthread_t gProvisioningThread = (pthread_t)NULL;
 pthread_t gDisplayThread = (pthread_t)NULL;
 pthread_t gSpawnThread = (pthread_t)NULL;
 pthread_t gAdcThread = (pthread_t)NULL;
+//pthread_t gUart1Thread = (pthread_t)NULL;
 
+extern void modbusSpaff();
 extern void *adcThread(void *arg0);
+//extern void *uart1Thread(void *arg0);
 pthread_mutex_t voltageMutex;
 
 uint8_t  gIsWlanConnected = 0;
@@ -2163,6 +2170,8 @@ static void DisplayBanner(char * AppName)
     LOG_MESSAGE("\t\t            %s Application       \n\r", AppName);
     LOG_MESSAGE("\t\t *************************************************\n\r");
     LOG_MESSAGE("\n\n\n\r");
+    //uint8_t bytes[] = {0x7a, 0x04, 0x00, 0x00, 0x00, 0x02, 0x7B, 0x80};
+    //WriteBytes(&bytes, 8);
 }
 
 _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
@@ -2267,7 +2276,6 @@ void gpioButtonFxn0(uint8_t index)
 }
 
 void updateTime() {
-
     /* Get time from ntps */
     LOG_MESSAGE("\r [App] Timezone = %d.\n\r",ClockSync_getTimeZone());
     struct tm netTime;
@@ -2291,8 +2299,7 @@ void updateTime() {
     dateTime.tm_mon = netTime.tm_mon + 1;
     dateTime.tm_year = netTime.tm_year + 1900;
     sl_DeviceSet(SL_DEVICE_GENERAL, SL_DEVICE_GENERAL_DATE_TIME, sizeof(SlDateTime_t), (uint8_t *)(&dateTime));
-    /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) 
-
+    /*if(clock_settime(CLOCK_REALTIME, &netTime) != 0) */
 }
 
 int32_t wlanConnect(void)
@@ -2326,6 +2333,11 @@ int32_t wlanConnect(void)
    
 }
 
+void NADA(void) {
+
+
+}
+
 //*****************************************************************************
 //
 //! \brief  Main application thread
@@ -2337,11 +2349,15 @@ int32_t wlanConnect(void)
 //*****************************************************************************
 void * mainThread( void *arg )
 {
+
+    //modbusSpaff();
+
     uint32_t             RetVal;
     pthread_attr_t      pAttrs;
     pthread_attr_t      pAttrs_spawn;
     pthread_attr_t      pAttrs_display;
     pthread_attr_t      pAttrs_adc;
+    //pthread_attr_t      pAttrs_uart1;
     struct sched_param  priParam;
 
     /* Initialize SlNetSock layer with CC31xx/CC32xx interface */
@@ -2367,7 +2383,8 @@ void * mainThread( void *arg )
 
     /* Initial Terminal, and print Application name */
     InitTerm();
-    DisplayBanner(APPLICATION_NAME);
+    InitTerm1();
+    //DisplayBanner(APPLICATION_NAME);
 
     /* Switch off all LEDs on boards */
     GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_OFF);
@@ -2464,5 +2481,25 @@ void * mainThread( void *arg )
         /* pthread_create() failed */
         while (1);
     }
+
+    /* create the uart1 read thread */
+    /*pthread_attr_init(&pAttrs_uart1);
+    priParam.sched_priority = 1;
+    RetVal = pthread_attr_setschedparam(&pAttrs_uart1, &priParam);
+    RetVal |= pthread_attr_setstacksize(&pAttrs_uart1, TASK_STACK_SIZE);
+
+    if(RetVal)
+    {
+        // error handling 
+        while(1)
+        {
+            ;
+        }
+    }
+    RetVal = pthread_create(&gUart1Thread, &pAttrs_uart1, uart1Thread, NULL);
+    if (RetVal != 0) {
+        // pthread_create() failed 
+        while (1);
+    }*/
     return(0);
 }

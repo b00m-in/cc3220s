@@ -27,6 +27,8 @@ int GetCmd(char *pcBuffer,
 
 void Message(const char *str);
 
+void Bytes(const uint8_t *str, uint8_t len);
+
 void ClearTerm();
 
 char getch(void);

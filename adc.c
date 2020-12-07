@@ -103,6 +103,11 @@ void *adcThread(void *arg0)
         while (1);
     }
     float average = 0.0;
+    //uint8_t wb[] = {0x7a, 0x04, 0x00, 0x00, 0x00, 0x02, 0x7B, 0x80};
+    //uint8_t wb[] = {0x11, 0x01, 0x01, 0x30, 0x00, 0x01, 0xFE, 0xA9};
+    uint8_t wb[] = {0x7A, 0x04, 0x00, 0x00, 0x00, 0x02, 0x7B, 0x80};
+    //uint8_t wbpwr[] = {0x7A, 0x04, 0x00, 0x0C, 0x00, 0x02, 0xBB, 0x83};
+    uint8_t rb[] = {0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77};
     while (1) {
         for (i = 0; i < ADC_SAMPLE_COUNT; i++) {
             res = ADC_convert(adc, &adcValue1[i]);
@@ -130,6 +135,12 @@ void *adcThread(void *arg0)
             while (1);
         }
         //UART_PRINT("\r [ADC] Sem timer posted %d \n", voltage);
+        // EN up to enable TX
+        GPIO_write(CC3220S_LAUNCHXL_GPIO_07, Board_GPIO_LED_ON);
+        WriteBytes1(&wb, 8); // blocks until all 8 bytes are written to uart1
+        GPIO_write(CC3220S_LAUNCHXL_GPIO_07, Board_GPIO_LED_OFF); // EN down to disable TX / enable RX
+        ReadBytes1(&rb, 9);  // blocks for readTimeout seconds while reading from uart1
+        WriteBytes(&rb, 9);  // write the read bytes to uart0
     }
 
     ADC_close(adc);

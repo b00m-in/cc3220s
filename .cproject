@@ -38,6 +38,7 @@
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_18.1.compilerID.LITTLE_ENDIAN.707165977" name="Little endian code [See 'General' page to edit] (--little_endian, -me)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_18.1.compilerID.LITTLE_ENDIAN" useByScannerDiscovery="false" value="true" valueType="boolean"/>
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_18.1.compilerID.INCLUDE_PATH.1685944680" name="Add dir to #include search path (--include_path, -I)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_18.1.compilerID.INCLUDE_PATH" valueType="includePath">
 									<listOptionValue builtIn="false" value="${INHERITED_INCLUDE_PATH}"/>
+									<listOptionValue builtIn="false" value="/home/sridhar/dev/github.com/Jacajack/liblightmodbus/include"/>
 									<listOptionValue builtIn="false" value="${PROJECT_ROOT}"/>
 									<listOptionValue builtIn="false" value="${COM_TI_SIMPLELINK_CC32XX_SDK_INSTALL_DIR}/source/ti/posix/ccs"/>
 									<listOptionValue builtIn="false" value="${CG_TOOL_ROOT}/include"/>
@@ -63,6 +64,7 @@
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.REREAD_LIBS.1062551171" name="Reread libraries; resolve backward references (--reread_libs, -x)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.REREAD_LIBS" useByScannerDiscovery="false" value="false" valueType="boolean"/>
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.SEARCH_PATH.681682688" name="Add &lt;dir&gt; to library search path (--search_path, -i)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.SEARCH_PATH" useByScannerDiscovery="false" valueType="libPaths">
 									<listOptionValue builtIn="false" value="${INHERITED_LIBRARY_PATH}"/>
+									<listOptionValue builtIn="false" value="/home/sridhar/dev/github.com/Jacajack/liblightmodbus"/>
 									<listOptionValue builtIn="false" value="${COM_TI_SIMPLELINK_CC32XX_SDK_INSTALL_DIR}/source/ti/net/utils"/>
 									<listOptionValue builtIn="false" value="${COM_TI_SIMPLELINK_CC32XX_SDK_INSTALL_DIR}/source/ti/net/sntp/lib"/>
 									<listOptionValue builtIn="false" value="${COM_TI_SIMPLELINK_CC32XX_SDK_INSTALL_DIR}/source"/>
@@ -74,6 +76,7 @@
 								</option>
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.LIBRARY.577465701" name="Include library file or command file as input (--library, -l)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_18.1.linkerID.LIBRARY" useByScannerDiscovery="false" valueType="libs">
 									<listOptionValue builtIn="false" value="${INHERITED_LIBRARIES}"/>
+									<listOptionValue builtIn="false" value="arm/liblightmodbus.a"/>
 									<listOptionValue builtIn="false" value="ccs/Release/net_utils.a"/>
 									<listOptionValue builtIn="false" value="ccs/m4/sntp_release.a"/>
 									<listOptionValue builtIn="false" value="ccs/Release/slnetifwifi.a"/>

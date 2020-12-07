@@ -55,6 +55,7 @@ extern int vsnprintf(char * s,
 //                 GLOBAL VARIABLES
 //*****************************************************************************
 static UART_Handle uartHandle;
+static UART_Handle uartHandle1;
 
 //*****************************************************************************
 //
@@ -78,14 +79,37 @@ UART_Handle InitTerm(void)
     uartParams.writeDataMode = UART_DATA_BINARY;
     uartParams.readDataMode = UART_DATA_BINARY;
     uartParams.readReturnMode = UART_RETURN_FULL;
+    uartParams.readTimeout = 1000; // ms?
+    uartParams.writeTimeout = 1000; // ms?
     uartParams.readEcho = UART_ECHO_OFF;
-    uartParams.baudRate = 115200;
+    uartParams.baudRate = 9600;//57600;//115200;
 
     uartHandle = UART_open(Board_UART0, &uartParams);
     /* remove uart receive from LPDS dependency */
     UART_control(uartHandle, UART_CMD_RXDISABLE, NULL);
 
     return(uartHandle);
+}
+UART_Handle InitTerm1(void)
+{
+    UART_Params uartParams;
+
+    //UART_init();
+    UART_Params_init(&uartParams);
+
+    uartParams.writeDataMode = UART_DATA_BINARY;
+    uartParams.readDataMode = UART_DATA_BINARY;
+    uartParams.readReturnMode = UART_RETURN_FULL;
+    uartParams.readTimeout = 2000; // ms?
+    uartParams.writeTimeout = 1000; // ms?
+    uartParams.readEcho = UART_ECHO_OFF;
+    uartParams.baudRate = 9600;//57600;//115200;
+
+    uartHandle1 = UART_open(Board_UART1, &uartParams);
+    /* remove uart receive from LPDS dependency */
+    //UART_control(uartHandle1, UART_CMD_RXDISABLE, NULL); <--- this ******* thing cost me a day!! PIN_08_UART1_RX can't receive if disabled duh!
+
+    return(uartHandle1);
 }
 
 //*****************************************************************************
@@ -291,6 +315,25 @@ void Message(const char *str)
 #endif
 }
 
+void WriteBytes(const uint8_t *str, uint8_t len)
+{
+    UART_write(uartHandle, str, len);
+}
+
+void ReadBytes(uint8_t *str, uint8_t len)
+{
+    UART_read(uartHandle, str, len);
+}
+
+void WriteBytes1(const uint8_t *str, uint8_t len)
+{
+    UART_write(uartHandle1, str, len);
+}
+
+void ReadBytes1(uint8_t *str, uint8_t len)
+{
+    UART_read(uartHandle1, str, len);
+}
 //*****************************************************************************
 //
 //! Clear the console window

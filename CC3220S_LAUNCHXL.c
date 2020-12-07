@@ -255,6 +255,7 @@ GPIO_PinConfig gpioPinConfigs[] = {
     GPIOCC32XX_GPIO_12 | GPIO_DO_NOT_CONFIG, /* SPI chip select */
     GPIOCC32XX_GPIO_06 | GPIO_DO_NOT_CONFIG, /* LCD power control */
     GPIOCC32XX_GPIO_03 | GPIO_DO_NOT_CONFIG, /*LCD enable */
+    GPIOCC32XX_GPIO_07 | GPIO_CFG_OUT_STD, /*LCD enable */
 };
 
 /*
@@ -426,7 +427,7 @@ PowerCC32XX_ParkInfo parkInfo[] = {
     {PowerCC32XX_PIN05, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* GPIO14              */
     {PowerCC32XX_PIN06, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* GPIO15              */
     {PowerCC32XX_PIN07, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* GPIO16              */
-    {PowerCC32XX_PIN08, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* GPIO17              */
+    {PowerCC32XX_PIN08, PowerCC32XX_WEAK_PULL_UP_STD}, /* GPIO17              */
     {PowerCC32XX_PIN13, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* FLASH_SPI_DIN       */
     {PowerCC32XX_PIN15, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* GPIO22              */
     {PowerCC32XX_PIN16, PowerCC32XX_WEAK_PULL_DOWN_STD}, /* TDI (JTAG DEBUG)    */
@@ -550,7 +551,7 @@ const uint_least8_t SDFatFS_count = CC3220S_LAUNCHXL_SDFatFSCOUNT;
 SDHostCC32XX_Object sdhostCC3220SObjects[CC3220S_LAUNCHXL_SDCOUNT];
 
 /* SDHost configuration structure, describing which pins are to be used */
-const SDHostCC32XX_HWAttrsV1 sdhostCC3220SHWattrs[CC3220S_LAUNCHXL_SDCOUNT] = {
+/*const SDHostCC32XX_HWAttrsV1 sdhostCC3220SHWattrs[CC3220S_LAUNCHXL_SDCOUNT] = {
     {
         .clkRate = 8000000,
         .intPriority = ~0,
@@ -572,7 +573,7 @@ const SD_Config SD_config[CC3220S_LAUNCHXL_SDCOUNT] = {
 };
 
 const uint_least8_t SD_count = CC3220S_LAUNCHXL_SDCOUNT;
-
+*/
 /*
  *  =============================== SPI ===============================
  */
@@ -584,7 +585,7 @@ SPICC32XXDMA_Object spiCC3220SDMAObjects[CC3220S_LAUNCHXL_SPICOUNT];
 uint32_t spiCC3220SDMAscratchBuf[CC3220S_LAUNCHXL_SPICOUNT];
 
 const SPICC32XXDMA_HWAttrsV1 spiCC3220SDMAHWAttrs[CC3220S_LAUNCHXL_SPICOUNT] = {
-    /* index 0 is reserved for LSPI that links to the NWP */
+    // index 0 is reserved for LSPI that links to the NWP 
     {
         .baseAddr = LSPI_BASE,
         .intNum = INT_LSPI,
