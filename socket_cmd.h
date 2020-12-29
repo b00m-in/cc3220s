@@ -137,6 +137,7 @@ _u8 *myDeviceName;
 char *email; //_u32
 char *coords; //_u32
 char *temp;
+uint8_t *slaveAddress;
 
 void PrintIPAddress(unsigned char ipv6,
                     void *ip);

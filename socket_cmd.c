@@ -37,6 +37,7 @@
 //#define Timestamp_get   TimestampProvider_get32
 
 extern volatile float voltage;
+extern volatile float latestMeterReads[];
 extern pthread_mutex_t voltageMutex;
 
 
@@ -243,11 +244,27 @@ int32_t TCPClient(uint8_t nb,
             cJSON_AddNumberToObject(loco, "id", hashi);
             cJSON_AddNumberToObject(loco, "timestamp", abstime.tm_sec); //.tv_sec // for timespec
             cJSON_AddStringToObject(loco, "timestr", timestr);
-            cJSON_AddBoolToObject(loco, "status", true);
             pthread_mutex_lock(&voltageMutex);
-            cJSON_AddNumberToObject(loco, "voltage", voltage);
+            //cJSON_AddNumberToObject(loco, "", voltage);
+            if (voltage > 100000.) { //uV (100000 = 0.1V) logic applies to NC on SPD
+                cJSON_AddBoolToObject(loco, "status", true);
+            } else {
+                cJSON_AddBoolToObject(loco, "status", false);
+            }
+            cJSON_AddNumberToObject(loco, "voltage",     latestMeterReads[0]);
+            cJSON_AddNumberToObject(loco, "current"    , latestMeterReads[1]);
+            cJSON_AddNumberToObject(loco, "activePower", latestMeterReads[2]);
+            cJSON_AddNumberToObject(loco, "apparentPwr", latestMeterReads[3]);
+            cJSON_AddNumberToObject(loco, "reactivePwr", latestMeterReads[4]);
+            cJSON_AddNumberToObject(loco, "powerFactor", latestMeterReads[5]);
+            cJSON_AddNumberToObject(loco, "freq",        latestMeterReads[6]);
+            cJSON_AddNumberToObject(loco, "impActvEnrg", latestMeterReads[7]);
+            cJSON_AddNumberToObject(loco, "expActvEnrg", latestMeterReads[8]);
+            cJSON_AddNumberToObject(loco, "impRctvEnrg", latestMeterReads[9]);
+            cJSON_AddNumberToObject(loco, "expRctvEnrg", latestMeterReads[10]);
+            cJSON_AddNumberToObject(loco, "ttlActvEnrg", latestMeterReads[11]);
+            cJSON_AddNumberToObject(loco, "ttlRctvEnrg", latestMeterReads[12]);
             pthread_mutex_unlock(&voltageMutex);
-            cJSON_AddNumberToObject(loco, "freq", 50.3);
             //cJSON_AddNumberToObject(loco, "lat", 13.4538);
             //cJSON_AddNumberToObject(loco, "lng", 77.6283);
             break;

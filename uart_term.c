@@ -79,14 +79,14 @@ UART_Handle InitTerm(void)
     uartParams.writeDataMode = UART_DATA_BINARY;
     uartParams.readDataMode = UART_DATA_BINARY;
     uartParams.readReturnMode = UART_RETURN_FULL;
-    uartParams.readTimeout = 1000; // ms?
+    uartParams.readTimeout = 2000; // ms?
     uartParams.writeTimeout = 1000; // ms?
     uartParams.readEcho = UART_ECHO_OFF;
     uartParams.baudRate = 9600;//57600;//115200;
 
     uartHandle = UART_open(Board_UART0, &uartParams);
     /* remove uart receive from LPDS dependency */
-    UART_control(uartHandle, UART_CMD_RXDISABLE, NULL);
+    //UART_control(uartHandle, UART_CMD_RXDISABLE, NULL);
 
     return(uartHandle);
 }
