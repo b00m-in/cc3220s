@@ -177,7 +177,11 @@ void *adcThread(void *arg0)
         float vf;
         ieee754(&rb[3], &vf); // skip the first 3 bytes and convert the next 4 to float
         //UART_PRINT("\r %s: %.3f \n", parameters[lc], vf);
-        latestMeterReads[lc] = vf;
+        if (vf > 1000000000.00 || vf < -10000000000.00 ) { //iee754 returns floats like 5.e+33 if rb doesn't have a valid meter reading in it, for instance when ReadBytes times out for whatever reason
+            latestMeterReads[lc] = 987.65; // this is a dummy reading value - document it somewhere in a manual!
+        } else {
+            latestMeterReads[lc] = vf;
+        }
         lc++;
         if (lc > 12) {
             lc = 0;

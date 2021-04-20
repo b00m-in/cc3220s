@@ -91,7 +91,7 @@
 #define PING_TIMEOUT_SEC                        (1)    
 
 /* Enable UART Log */
-//#define LOG_MESSAGE_ENABLE
+#define LOG_MESSAGE_ENABLE
 #ifdef LOG_MESSAGE_ENABLE
 #define LOG_MESSAGE UART_PRINT
 #else
@@ -214,7 +214,6 @@ pthread_t gSpawnThread = (pthread_t)NULL;
 pthread_t gAdcThread = (pthread_t)NULL;
 //pthread_t gUart1Thread = (pthread_t)NULL;
 
-extern void modbusSpaff();
 extern void *adcThread(void *arg0);
 //extern void *uart1Thread(void *arg0);
 pthread_mutex_t voltageMutex;
@@ -460,8 +459,7 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
     switch(pWlanEvent->Id)
     {
         case SL_WLAN_EVENT_CONNECT:
-            LOG_MESSAGE(
-                " [Event] STA connected to AP "
+            LOG_MESSAGE("\r [Event] STA connected to AP "
                 "- BSSID:%.2x:%.2x:%.2x:%.2x:%.2x:%.2x, ",
                 pWlanEvent->Data.Connect.Bssid[0],
                 pWlanEvent->Data.Connect.Bssid[1],
@@ -550,20 +548,25 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             switch(pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus)
             {
             case SL_WLAN_PROVISIONING_GENERAL_ERROR:
-            case SL_WLAN_PROVISIONING_ERROR_ABORT:
-            case SL_WLAN_PROVISIONING_ERROR_ABORT_INVALID_PARAM:
-            case SL_WLAN_PROVISIONING_ERROR_ABORT_HTTP_SERVER_DISABLED:
-            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROFILE_LIST_FULL:
-            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROVISIONING_ALREADY_STARTED:
-                LOG_MESSAGE(" [Provisioning] Provisioning Error status=%d\r\n",
+                LOG_MESSAGE("\r [Provisioning] Provisioning_general_error status=%d\r\n",
                             pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_ERROR_ABORT:
+                LOG_MESSAGE("\r [Provisioning] Provisioning_error_abort status=%d\r\n",
+                            pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_INVALID_PARAM:
+                LOG_MESSAGE("\r [Provisioning] Provisioning_error_invalid_param status=%d\r\n",
+                            pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_HTTP_SERVER_DISABLED:
+                LOG_MESSAGE("\r [Provisioning] Provisioning_error_abort_http_server_disabled status=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROFILE_LIST_FULL:
+                LOG_MESSAGE("\r [Provisioning] Provisioning_error_abort_profile_list_full status=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
+            case SL_WLAN_PROVISIONING_ERROR_ABORT_PROVISIONING_ALREADY_STARTED:
+                LOG_MESSAGE("\r [Provisioning] Provisioning_error_abort_provisioning_already_started status=%d\r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus);
                 SignalEvent(AppEvent_ERROR);
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_FAIL_NETWORK_NOT_FOUND:
-                LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation failed: "
-                    "network not found\r\n");
+                LOG_MESSAGE("\r [Provisioning] Profile confirmation failed: network not found\r\n");
                 SignalEvent(AppEvent_PROVISIONING_STARTED);
                 break;
 
@@ -577,21 +580,19 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_CONNECTION_SUCCESS_IP_NOT_ACQUIRED:
-                LOG_MESSAGE(
-                    " [Provisioning] Profile confirmation failed:"
+                LOG_MESSAGE("\r [Provisioning] Profile confirmation failed:"
                     " IP address not acquired\r\n");
                 SignalEvent(AppEvent_PROVISIONING_STARTED);
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS_FEEDBACK_FAILED:
-                LOG_MESSAGE(
-                    " [Provisioning] Profile Confirmation failed "
+                LOG_MESSAGE("\r [Provisioning] Profile Confirmation failed "
                     "(Connection Success, feedback to Smartphone app failed)\r\n");
                 SignalEvent(AppEvent_PROVISIONING_STARTED);
                 break;
 
             case SL_WLAN_PROVISIONING_CONFIRMATION_STATUS_SUCCESS:
-                LOG_MESSAGE(" [Provisioning] Profile Confirmation Success! ProvisioningStatus=%d, WlanStatus=%d \r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
+                LOG_MESSAGE("\r [Provisioning] Profile Confirmation Success! ProvisioningStatus=%d, WlanStatus=%d \r\n", pWlanEvent->Data.ProvisioningStatus.ProvisioningStatus, pWlanEvent->Data.ProvisioningStatus.WlanStatus);
                 SignalEvent(AppEvent_PROVISIONING_SUCCESS);
                 break;
 
@@ -2187,12 +2188,12 @@ _i32 ExtractLengthFromMetaData(_u8 *pMetaDataStart, _u16 MetaDataLen)
         Type = *pTlv; /* Type is one byte */
         pTlv++;
         TlvLen = *(_u16 *)pTlv; /* Length is two bytes */
-        //LOG_MESSAGE("\r [POST] header type (%d) length (%d) looking for (%d) or (%d) \n", Type, TlvLen, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN);
+        LOG_MESSAGE("\r [POST] header type (%d) length (%d) looking for (%d) or (%d) \n", Type, TlvLen, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_REFERER, SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN);
         pTlv+=2;
         if (Type == SL_NETAPP_REQUEST_METADATA_TYPE_HTTP_CONTENT_LEN)
         {
             _i32 LengthFieldValue=0;
-            //LOG_MESSAGE("\r [POST] header - (%d) contentlen \n", LengthFieldValue);
+            LOG_MESSAGE("\r [POST] header - (%d) contentlen \n", LengthFieldValue);
             /* Found the right type, extract its value and return. */
             memcpy(&LengthFieldValue, pTlv, TlvLen);
             pTlv += TlvLen;
@@ -2350,8 +2351,6 @@ void NADA(void) {
 void * mainThread( void *arg )
 {
 
-    //modbusSpaff();
-
     uint32_t             RetVal;
     pthread_attr_t      pAttrs;
     pthread_attr_t      pAttrs_spawn;
@@ -2378,6 +2377,7 @@ void * mainThread( void *arg )
     if (RetVal != 0) {
         /* pthread_mutex_init() failed */
         UART_PRINT("\r m0v - Couldn't create mutex  - %d\n", RetVal);
+        //LOG_MESSAGE("\r b00m - Couldn't create mutex  - %d\n", RetVal);
         while (1) {}
     }
 
@@ -2463,6 +2463,7 @@ void * mainThread( void *arg )
     }
 
     /* create the adc thread */
+    /*
     pthread_attr_init(&pAttrs_adc);
     priParam.sched_priority = 1;
     RetVal = pthread_attr_setschedparam(&pAttrs_adc, &priParam);
@@ -2470,7 +2471,7 @@ void * mainThread( void *arg )
 
     if(RetVal)
     {
-        /* error handling */
+        // error handling 
         while(1)
         {
             ;
@@ -2478,9 +2479,10 @@ void * mainThread( void *arg )
     }
     RetVal = pthread_create(&gAdcThread, &pAttrs_adc, adcThread, NULL);
     if (RetVal != 0) {
-        /* pthread_create() failed */
+        // pthread_create() failed 
         while (1);
     }
+    */
 
     /* create the uart1 read thread */
     /*pthread_attr_init(&pAttrs_uart1);

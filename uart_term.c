@@ -82,11 +82,11 @@ UART_Handle InitTerm(void)
     uartParams.readTimeout = 2000; // ms?
     uartParams.writeTimeout = 1000; // ms?
     uartParams.readEcho = UART_ECHO_OFF;
-    uartParams.baudRate = 9600;//57600;//115200;
+    uartParams.baudRate = 115200;//9600;//57600;//
 
     uartHandle = UART_open(Board_UART0, &uartParams);
     /* remove uart receive from LPDS dependency */
-    //UART_control(uartHandle, UART_CMD_RXDISABLE, NULL);
+    UART_control(uartHandle, UART_CMD_RXDISABLE, NULL);
 
     return(uartHandle);
 }
