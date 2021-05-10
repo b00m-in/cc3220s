@@ -4,6 +4,7 @@
 	<comment></comment>
 	<projects>
 		<project>tirtos_builds_CC3220S_LAUNCHXL_release_ccs</project>
+		<project>ota</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

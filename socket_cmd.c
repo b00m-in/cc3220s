@@ -297,6 +297,10 @@ int32_t TCPClient(uint8_t nb,
         free(buf);
         return -1;
     }
+    if (loco != NULL) {
+        cJSON_Delete(loco);
+    }
+    free(out);
     /* end prepare json packet*/
 
     if(ipv6)
@@ -504,6 +508,9 @@ int32_t TCPClient(uint8_t nb,
         UART_PRINT("\r [TCPClient] Received %u packets (%u bytes) successfully \n", (rcvd_bytes / BUF_LEN), rcvd_bytes);
     }
 
+    uint8_t otaupdateavailable = 0;
+    cJSON *rj = NULL;
+    cJSON *version = NULL;
     if(tx) //receive thank you response
     {
         uint32_t rcvd_bytes = 0;
@@ -535,18 +542,44 @@ int32_t TCPClient(uint8_t nb,
         for(j = 0; j < rcvd_bytes; ++j) {
             UART_PRINT(" %c ", recd_data[j]);
         }
-        //UART_PRINT("\r [TCPClient] End \n");
+        rj = cJSON_Parse(recd_data);
+        float fv = 0.0f;
+        if (rj != NULL ) {
+            version = cJSON_GetObjectItem(rj, "latest");    
+            if (version != NULL) {
+                UART_PRINT("\r [TCPClient] version %.1f \n", version->valuedouble);
+                fv = version->valuedouble;
+                UART_PRINT("\r [TCPClient] version %.1f \n", fv);
+            }
+        }
+
+        if (fv > APPLICATION_VERSION) { // if received app version is greater than current
+            otaupdateavailable = 1;
+            UART_PRINT("\r [TCPClient] otaupdateavailable %.1f > %.1f \n", fv, APPLICATION_VERSION);
+        }
     }
     /* Calling 'close' with the socket descriptor,
      * once operation is finished. */
     status = sl_Close(sock);
     ASSERT_ON_ERROR1(status, SL_SOCKET_ERROR);
+    UART_PRINT("\r [TCPClient] Closed socket \n");
 
+    //cJSON_Delete(version); // don't delete this or else deleting rj will fall over for whatever reason!
+    if (rj != NULL) {
+        cJSON_Delete(rj);
+    }
     free(timestr);
-    free(out);
     free(buf);
-    cJSON_Delete(loco);
-    return(0);
+    //free(out);
+    //cJSON_Delete(loco);
+    UART_PRINT("\r [TCPClient] Freed resources \n");
+    if (otaupdateavailable == 1) {
+        UART_PRINT("\r [TCPClient] Returning %d \n", ret);
+        return(1);
+    } else {
+        UART_PRINT("\r [TCPClient] Returning %d \n", ret);
+        return(0);
+    }
 }
 
 int32_t TCPClientTest(uint8_t nb,

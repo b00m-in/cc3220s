@@ -62,6 +62,8 @@
 #include <ti/drivers/ADC.h>
 #include <ti/net/utils/clock_sync.h>
 #include <ti/drivers/net/wifi/slnetifwifi.h>
+#include <ti/net/ota/ota.h>
+#include <ti/net/ota/otauser.h>
 #include <uart_term.h>
 
 #include <pthread.h>
@@ -70,17 +72,17 @@
 #include <time.h>
 #include "external_provisioning_conf.h"
 #include "socket_cmd.h"
+#include "platform.h"
 
 /* Application Version and Naming*/
-#define APPLICATION_NAME         "PROVISIONING"
-#define APPLICATION_VERSION "01.00.00.14"
+#define APPLICATION_NAME         "M0V"
 
 /* USER's defines */
 #define SPAWN_TASK_PRIORITY                     (9)
-#define TASK_STACK_SIZE                         (4096)
-#define TIMER_TASK_STACK_SIZE                   (1024)
-#define DISPLAY_TASK_STACK_SIZE                 (512)
-#define SL_STOP_TIMEOUT                         (200)
+#define TASK_STACK_SIZE                         (5120)
+#define TIMER_TASK_STACK_SIZE                   (2048)
+#define DISPLAY_TASK_STACK_SIZE                 (1024)
+#define SL_STOP_TIMEOUT                         (500)
 /* Provisioning inactivity timeout in seconds (20 min)*/
 #define PROVISIONING_INACTIVITY_TIMEOUT         (1200)     
 /* 15 seconds */
@@ -89,6 +91,7 @@
 #define CONNECTION_PHASE_TIMEOUT_SEC            (2) 
 /* 1 second */   
 #define PING_TIMEOUT_SEC                        (1)    
+#define ASYNC_EVT_TIMEOUT   (5000)      /* In msecs */
 
 /* Enable UART Log */
 #define LOG_MESSAGE_ENABLE
@@ -122,6 +125,11 @@
 #define ROLE_STA 0
 #define ROLE_AP  2
 
+/* local ota data */
+OTA_memBlock otaMemBlock;
+/* must be global, will be pointed by extlib_ota */
+Ota_optServerInfo g_otaOptServerInfo; 
+
 /* Application's states */
 typedef enum
 {
@@ -133,6 +141,8 @@ typedef enum
 
     AppState_PROVISIONING_IN_PROGRESS,
     AppState_PROVISIONING_WAIT_COMPLETE,
+
+    APP_STATE_OTA_RUN,
 
     AppState_ERROR,
     AppState_MAX
@@ -154,13 +164,35 @@ typedef enum
     AppEvent_PROVISIONING_STOPPED,
     AppEvent_PROVISIONING_WAIT_CONN,
 
+
     AppEvent_TIMEOUT,
     AppEvent_ERROR,
     AppEvent_RESTART,
     AppEvent_STUCK,
+
+    APP_EVENT_OTA_START,
+    APP_EVENT_CONTINUE,
+    APP_EVENT_OTA_CHECK_DONE,
+    APP_EVENT_OTA_DOWNLOAD_DONE,
+    APP_EVENT_OTA_ERROR,
+
     AppEvent_MAX
 
 }AppEvent;
+
+/*
+ *  \brief  Application state's context
+ */
+typedef struct
+{
+    AppState currentState;            // Current state of the application //
+    volatile uint32_t pendingEvents;    // Events pending to be processed //
+    uint8_t role;                       // SimpleLink's role - STATION/AP/P2P //
+    uint32_t asyncEvtTimeout;           // Timeout value//
+    PlatformTimeout_t PlatformTimeout_Led;
+}s_AppContext;
+
+s_AppContext gAppCtx;
 
  /* Function pointer to the event handler */
 typedef int32_t (*fptr_EventHandler)(void);
@@ -205,6 +237,16 @@ int32_t returnToFactoryDefault(void);
 void    StopAsyncEvtTimer(void);
 int32_t wlanConnect(void);
 
+int32_t OtaInit();
+int32_t OtaCheckAndDoCommit();
+int32_t ProcessRestartMcu();
+int32_t OtaImageTestingAndReset();
+int32_t OtaRunStep();
+int32_t OtaCount_Done = 0;
+int32_t OtaCount_Warnings = 0;
+int32_t OtaCount_Errors = 0;
+static int32_t InitSimplelink(uint8_t const role);
+static int32_t RestartSimplelink(uint8_t const role);
 /****************************************************************************
                       GLOBAL VARIABLES
 ****************************************************************************/
@@ -212,6 +254,7 @@ pthread_t gProvisioningThread = (pthread_t)NULL;
 pthread_t gDisplayThread = (pthread_t)NULL;
 pthread_t gSpawnThread = (pthread_t)NULL;
 pthread_t gAdcThread = (pthread_t)NULL;
+//pthread_t g_ota_thread = (pthread_t)NULL;
 //pthread_t gUart1Thread = (pthread_t)NULL;
 
 extern void *adcThread(void *arg0);
@@ -236,9 +279,12 @@ timer_t gTimer;
 volatile bool forget = false;
 bool once = false;
 bool stuck = false;
+bool restart = false;
 
 const char *Roles[] = {"STA","STA","AP","P2P"};
 const char *WlanStatus[] = {"DISCONNECTED","SCANING","CONNECTING","CONNECTED"};
+
+uint8_t g_performOtaCommand = 0;
 
 /* Application lookup/transition table */
 const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
@@ -258,8 +304,13 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_TIMEOUT */ {ReportError, AppState_ERROR          },
         /* Event: AppEvent_ERROR */ {ReportError, AppState_ERROR            },
         /* Event: AppEvent_RESTART */ {ProvisioningStart,
-                                       AppState_PROVISIONING_IN_PROGRESS},
-        /* Event: AppEvent_STUCK */ {DoNothing, AppState_STARTING           }
+                                           AppState_PROVISIONING_IN_PROGRESS},
+        /* Event: AppEvent_STUCK */ {DoNothing, AppState_STARTING           },
+        /* Event: APP_EVENT_OTA_START */ {DoNothing, AppState_STARTING      },
+        /* Event: APP_EVENT_CONTINUE */ {DoNothing, AppState_STARTING       },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */ {DoNothing, AppState_STARTING },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_STARTING}, 
+        /* Event: APP_EVENT_OTA_ERROR */ {DoNothing, AppState_STARTING      }
     },
     /* AppState_WAIT_FOR_CONNECTION */
     {
@@ -288,7 +339,12 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION      },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING           }
+        {DoNothing, AppState_STARTING                             },
+        /* Event: APP_EVENT_OTA_START */       {DoNothing, AppState_WAIT_FOR_CONNECTION},
+        /* Event: APP_EVENT_CONTINUE */        {DoNothing, AppState_WAIT_FOR_CONNECTION},
+        /* Event: APP_EVENT_OTA_CHECK_DONE */  {DoNothing, AppState_WAIT_FOR_CONNECTION},
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_WAIT_FOR_CONNECTION}, 
+        /* Event: APP_EVENT_OTA_ERROR */ {DoNothing, AppState_WAIT_FOR_CONNECTION}
     },
     /* AppState_WAIT_FOR_IP */
     {
@@ -316,7 +372,12 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION     },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING           }
+        {DoNothing, AppState_STARTING           },
+        /* Event: APP_EVENT_OTA_START */ {DoNothing, AppState_WAIT_FOR_IP      },
+        /* Event: APP_EVENT_CONTINUE */ {DoNothing, AppState_WAIT_FOR_IP       },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */ {DoNothing, AppState_WAIT_FOR_IP },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_WAIT_FOR_IP}, 
+        /* Event: APP_EVENT_OTA_ERROR */ {DoNothing, AppState_WAIT_FOR_IP      }
     },
     /* AppState_PINGING_GW */
     {
@@ -345,7 +406,12 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION             },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING             }
+        {DoNothing, AppState_STARTING             },
+        /* Event: APP_EVENT_OTA_START */ {OtaInit, APP_STATE_OTA_RUN },
+        /* Event: APP_EVENT_CONTINUE */ {DoNothing, AppState_PINGING_GW       },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */ {DoNothing, AppState_PINGING_GW },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_STARTING  }, 
+        /* Event: APP_EVENT_OTA_ERROR */ {DoNothing, AppState_STARTING        }
     },
     /* AppState_PROVISIONING_IN_PROGRESS  */
     {
@@ -374,7 +440,12 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ProcessRestartRequest, AppState_WAIT_FOR_CONNECTION            },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING           }
+        {DoNothing, AppState_STARTING           },
+        /* Event: APP_EVENT_OTA_START */       {DoNothing, AppState_PROVISIONING_IN_PROGRESS },
+        /* Event: APP_EVENT_CONTINUE */        {DoNothing, AppState_PROVISIONING_IN_PROGRESS },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */  {DoNothing, AppState_PROVISIONING_IN_PROGRESS },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_PROVISIONING_IN_PROGRESS }, 
+        /* Event: APP_EVENT_OTA_ERROR */       {DoNothing, AppState_PROVISIONING_IN_PROGRESS }
     
     },
     /* AppState_PROVISIONING_WAIT_COMPLETE */
@@ -404,7 +475,60 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ProcessRestartRequest, AppState_PROVISIONING_WAIT_COMPLETE },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING           }
+        {DoNothing, AppState_STARTING           },
+        /* Event: APP_EVENT_OTA_START */ {DoNothing, AppState_PROVISIONING_WAIT_COMPLETE      },
+        /* Event: APP_EVENT_CONTINUE */ {DoNothing, AppState_PROVISIONING_WAIT_COMPLETE       },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */ {DoNothing, AppState_PROVISIONING_WAIT_COMPLETE },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_PROVISIONING_WAIT_COMPLETE}, 
+        /* Event: APP_EVENT_OTA_ERROR */ {DoNothing, AppState_PROVISIONING_WAIT_COMPLETE      }
+    },
+    // APP_STATE_OTA_RUN 
+    {
+        // AppEvent_STARTED                 
+        {DoNothing, APP_STATE_OTA_RUN            },
+        // AppEvent_CONNECTED                
+        {DoNothing, APP_STATE_OTA_RUN           },
+        // AppEvent_IP_ACQUIRED              
+        {DoNothing, APP_STATE_OTA_RUN           },
+        // AppEvent_DISCONNECT               
+        // OTA - on disconnection/ip lost do rollback by reset,
+        // no pending commit check 
+        {HandleDiscnctEvt, AppState_WAIT_FOR_CONNECTION },
+        // APP_EVENT_PING_COMPLETE            
+        {ReportError, AppState_ERROR            },
+        // APP_EVENT_PROVISIONING_STARTED     
+        {ReportError, AppState_ERROR            },
+        // APP_EVENT_PROVISIONING_SUCCESS     
+        {ReportError, AppState_ERROR            },
+        // APP_EVENT_PROVISIONING_STOPPED     
+        {ReportError, AppState_ERROR            },
+        // AppEvent_PROVISIONING_WAIT_CONN  
+        {ReportError, AppState_ERROR            },
+        // APP_EVENT_TIMEOUT                  
+        {CheckLanConnection, AppState_PINGING_GW},
+        // APP_EVENT_ERROR                    
+        // OTA - sock error will produce APP_EVENT_RESTART event 
+        {ReportError, AppState_ERROR            },                    
+        // APP_EVENT_RESTART                   
+        {ProcessRestartMcu , AppState_STARTING         }, //PRR?
+        // Event: AppEvent_STUCK  
+        {DoNothing, AppState_STARTING           },
+        // APP_EVENT_OTA_START                
+        {DoNothing, APP_STATE_OTA_RUN           },
+        // APP_EVENT_CONTINUE                 
+           // OTA - run OTA steps untill download done 
+        {OtaRunStep, APP_STATE_OTA_RUN           },                  
+        // APP_EVENT_OTA_CHECK_DONE           
+          // OTA - back to pinging 
+        {CheckLanConnection, AppState_PINGING_GW },                               
+        // APP_EVENT_OTA_DOWNLOAD_DONE        
+        // OTA - move bundle to testing mode and 
+        // reset the MCU/NWP and restart the SM 
+        {OtaImageTestingAndReset, AppState_STARTING    },                                 
+        // APP_EVENT_OTA_ERROR                
+         // OTA - on ota error (security alert, 
+        // max consecutive retries, ...)  - stop 
+        {ReportError, AppState_ERROR            }                  
     },
     /* AppState_ERROR */
     /* we will restart connection for all errors */
@@ -434,7 +558,12 @@ const Provisioning_TableEntry_t gTransitionTable[AppState_MAX][AppEvent_MAX] =
         /* Event: AppEvent_RESTART */ 
         {ReportError, AppState_WAIT_FOR_CONNECTION     },
         /* Event: AppEvent_STUCK */ 
-        {DoNothing, AppState_STARTING           }
+        {DoNothing, AppState_STARTING           },
+        /* Event: APP_EVENT_OTA_START */       {DoNothing, AppState_WAIT_FOR_CONNECTION },
+        /* Event: APP_EVENT_CONTINUE */        {DoNothing, AppState_WAIT_FOR_CONNECTION },
+        /* Event: APP_EVENT_OTA_CHECK_DONE */  {DoNothing, AppState_WAIT_FOR_CONNECTION },
+        /* Event: APP_EVENT_OTA_DOWNLOAD_DONE*/{DoNothing, AppState_WAIT_FOR_CONNECTION }, 
+        /* Event: APP_EVENT_OTA_ERROR */       {DoNothing, AppState_WAIT_FOR_CONNECTION }
     }
 };
 
@@ -881,7 +1010,7 @@ void SimpleLinkSockEventHandler(SlSockEvent_t *pSock)
         break;
 
     default:
-        LOG_MESSAGE("[SOCK EVENT] - Unexpected Event [%x0x]\n\n",pSock->Event);
+        LOG_MESSAGE("[SOCK EVENT] - Unexpected Event [%x0x]\n\n", pSock->Event);
         break;
     }
 }
@@ -914,8 +1043,8 @@ void SimpleLinkInitCallback(uint32_t status,
 
     ASSERT_ON_ERROR((int32_t)status);
 
-
-    LOG_MESSAGE("Device started in %s role\n\r", (0 == status) ? "Station" :\
+    LOG_MESSAGE("***%s %0.1f \r\n", APPLICATION_NAME, APPLICATION_VERSION);
+    LOG_MESSAGE("***Device started in %s role\n\r", (0 == status) ? "Station" :\
         (2 == status) ? "AP" : ((3 == status) ? "P2P" : "Start Role error"));
 
     if(ROLE_STA == status)
@@ -1258,6 +1387,137 @@ int32_t ProcessRestartRequest(void)
     return (0);
 }
 
+//
+static int32_t ProcessRestartMCURequest()
+{
+    s_AppContext *const pCtx = &gAppCtx;
+    int32_t retVal = -1;
+
+    retVal = RestartSimplelink(pCtx->role);
+    ASSERT_ON_ERROR(retVal);
+
+    return(retVal);
+}
+
+static int32_t RestartSimplelink(uint8_t const role)
+{
+    int32_t retVal = -1;
+
+    retVal = sl_Stop(SL_STOP_TIMEOUT);
+    ASSERT_ON_ERROR(retVal);
+
+    retVal = InitSimplelink(role);
+    ASSERT_ON_ERROR(retVal);
+
+    return(retVal);
+}
+
+static int32_t InitSimplelink(uint8_t const role)
+{
+    s_AppContext *const pCtx = &gAppCtx;
+    int32_t retVal = -1;
+    int8_t event;
+    Provisioning_TableEntry_t  *pEntry = NULL;
+
+    pCtx->role = role;
+    pCtx->currentState = AppState_STARTING;
+    pCtx->pendingEvents = 0;
+
+    if((retVal = sl_Start(0, 0, 0)) == SL_ERROR_RESTORE_IMAGE_COMPLETE)
+    {
+        UART_PRINT("sl_Start Failed\r\n");
+        UART_PRINT(
+            "\r\n**********************************\r\nReturn to Factory "
+            "Default been Completed\r\nPlease RESET the Board\r\n"
+            "**********************************\r\n");
+        Platform_FactoryDefaultIndication();
+        while(1)
+        {
+            ;
+        }
+    }
+
+    if(SL_RET_CODE_PROVISIONING_IN_PROGRESS == retVal)
+    {
+        UART_PRINT(
+            " [ERROR] Provisioning is already running, stopping current "
+            "session...\r\n");
+        gStopInProgress = 1;
+        retVal = sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_STOP,0, 0, NULL,
+                                     0);
+        while(gStopInProgress)
+        {
+            mq_receive(gProvisioningSMQueue, (char*)&event, 1, NULL);
+
+            if(event != AppEvent_STARTED)
+            {
+                StopAsyncEvtTimer();
+            }
+
+            // Find Next event entry   
+            pEntry = (Provisioning_TableEntry_t *)&gTransitionTable[pCtx->currentState][event];
+
+            if(NULL != pEntry->p_evtHndl)
+            {
+                if(pEntry->p_evtHndl() < 0)
+                {
+                    UART_PRINT("Event handler failed..!! \r\n");
+                    while(1)
+                    {
+                        ;
+                    }
+                }
+            }
+
+            // Change state according to event //
+            if(pEntry->nextState != pCtx->currentState)
+            {
+                pCtx->currentState = pEntry->nextState;
+            }
+        }
+
+        retVal = sl_Start(0, 0, 0);
+    }
+
+    if(pCtx->role == retVal)
+    {
+        UART_PRINT("SimpleLinkInitCallback: started in role %d\r\n", pCtx->role);
+        SignalEvent(AppEvent_STARTED);
+    }
+    else
+    {
+        UART_PRINT(
+            "SimpleLinkInitCallback: started in role %d, set the requested "
+            "role %d\r\n",
+            retVal, pCtx->role);
+        retVal = sl_WlanSetMode(pCtx->role);
+        ASSERT_ON_ERROR(retVal);
+        retVal = sl_Stop(SL_STOP_TIMEOUT);
+        ASSERT_ON_ERROR(retVal);
+        retVal = sl_Start(0, 0, 0);
+        ASSERT_ON_ERROR(retVal);
+        if(pCtx->role != retVal)
+        {
+            UART_PRINT(
+                "SimpleLinkInitCallback: error setting role %d, status=%d\r\n",
+                pCtx->role, retVal);
+            SignalEvent(AppEvent_ERROR);
+        }
+        UART_PRINT("SimpleLinkInitCallback: restarted in role %d\r\n",
+                   pCtx->role);
+        pCtx->pendingEvents = 0;
+        SignalEvent(AppEvent_STARTED);
+    }
+
+    // Start timer //
+    pCtx->asyncEvtTimeout = ASYNC_EVT_TIMEOUT;
+    //retVal = 
+    StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
+    //ASSERT_ON_ERROR(retVal);
+
+    return(retVal);
+}
+
 //*****************************************************************************
 //
 //! \brief Start request -
@@ -1420,6 +1680,9 @@ int32_t HandleProvisioningComplete(void)
         if (ret != 0) {
             LOG_MESSAGE("[TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
             //Display_printf(display, 0, 0, "TCPClient failed");
+            if (ret == 1) {
+                GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_OFF);
+            }
         }
         else {
             GPIO_write(Board_GPIO_LED1, Board_GPIO_LED_OFF);
@@ -1450,6 +1713,16 @@ int32_t HandleProvisioningComplete(void)
 int32_t SendPingToGW(void)
 {
     LOG_MESSAGE("[App] SendingPingtoGW %d \r\n", g_CurrentState);
+    /*if(restart) {
+        restart = false;
+        int32_t retVal;
+        StopAsyncEvtTimer();
+        retVal = sl_Stop(SL_STOP_TIMEOUT);
+        LOG_MESSAGE("Stopped simplelink %d \r\n", retVal);
+        Platform_Sleep(5000);
+        Platform_Reset();
+        LOG_MESSAGE("Hardware restart reqd !! \r\n");
+    }*/
     /* Get IP and Gateway information */
     uint16_t len = sizeof(SlNetCfgIpV4Args_t);
     uint16_t ConfigOpt = 0;   /* return value could be one of the following: 
@@ -1562,12 +1835,21 @@ int32_t SendPingToGW(void)
     uint32_t numPackets = 1;
     ret = TCPClient(nb, port, dest, FALSE /*ipv6*/, numPackets, TRUE);
     if (ret != 0) {
+        if (ret == 1) {
+            restart = true;
+            LOG_MESSAGE("\r [TCPClient] otaupdateavailable %d \n\r", ret);
+            SignalEvent(APP_EVENT_OTA_START);
+            //GPIO_write(Board_GPIO_LED2, Board_GPIO_LED_OFF);
+            //StartAsyncEvtTimer(PING_TIMEOUT_SEC);
+            return(0);
+        }
         LOG_MESSAGE("\r [TCPClient] [line:%d, error:%d] \n\r", __LINE__, ret);
         LOG_MESSAGE("\r [App] TCPClient error ... reconnecting ... \n");
         //sl_Stop(100);
         //gRole = sl_Start(NULL, NULL, NULL);
         //SignalEvent(AppEvent_STUCK);
         stuck = true;
+        restart = true;
         SignalEvent(AppEvent_RESTART);
         //SignalEvent(AppEvent_STARTED);
         return(0);
@@ -1762,6 +2044,9 @@ int32_t DoNothing(void)
         StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
         forget = false;
     }*/
+    if (g_CurrentState == 1) {
+        StartAsyncEvtTimer(CONNECTION_PHASE_TIMEOUT_SEC);
+    }
     return(0);
 }
 
@@ -1943,7 +2228,7 @@ int32_t ProvisioningStart(void)
     SlDeviceVersion_t ver = {0};
 
     LOG_MESSAGE("\n\r\n\r\n\r==================================\n\r");
-    LOG_MESSAGE(" Provisioning Example Ver. %s\n\r",APPLICATION_VERSION);
+    LOG_MESSAGE(" Provisioning Example Ver. %.1f \n\r", APPLICATION_VERSION);
     LOG_MESSAGE("==================================\n\r");
 
     if (forget) 
@@ -2069,6 +2354,321 @@ int32_t ProvisioningStart(void)
     return(0);
 }
 
+int32_t OtaInit()
+{
+    int16_t Status;
+
+    StopAsyncEvtTimer();
+
+    // Configure the commit watchdog timer in seconds 
+    Status = Platform_CommitWdtConfig(50);
+    if(Status < 0)
+    {
+        LOG_MESSAGE(
+            "OtaInit: ERROR from Platform_CommitWdtConfig. Status=%d\r\n",
+            Status);
+        SignalEvent(AppEvent_ERROR);
+        return(Status);
+    }
+
+    LOG_MESSAGE("OtaInit: statistics = %d, %d, %d\r\n", OtaCount_Done,
+                  OtaCount_Warnings,
+                  OtaCount_Errors);
+    // init OTA 
+    LOG_MESSAGE("OtaInit: call Ota_init\r\n");
+    Status = OTA_init(OTA_RUN_NON_BLOCKING, &otaMemBlock, NULL);
+    if(Status < 0)
+    {
+        LOG_MESSAGE("OtaInit: ERROR from Ota_init. Status=%d\r\n", Status);
+        SignalEvent(AppEvent_ERROR); // Fatal error 
+        return(Status);
+    }
+
+    // set OTA server info 
+    LOG_MESSAGE(
+        "OtaConfig: call OTA_set EXTLIB_OTA_SET_OPT_SERVER_INFO,"
+        "ServerName=%s\r\n",
+        OTA_SERVER_NAME);
+    g_otaOptServerInfo.IpAddress = OTA_SERVER_IP_ADDRESS;
+    g_otaOptServerInfo.SecuredConnection = OTA_SERVER_SECURED;
+    strcpy((char *)g_otaOptServerInfo.ServerName,  OTA_SERVER_NAME);
+    strcpy((char *)g_otaOptServerInfo.VendorToken, OTA_VENDOR_TOKEN);
+    Status =
+        OTA_set(EXTLIB_OTA_SET_OPT_SERVER_INFO, sizeof(g_otaOptServerInfo),
+                (uint8_t *)&g_otaOptServerInfo, 0);
+    if(Status < 0)
+    {
+        LOG_MESSAGE(
+            "OtaInit: ERROR from OTA_set EXTLIB_OTA_SET_OPT_SERVER_INFO."
+            "Status=%d\r\n",
+            Status);
+        SignalEvent(AppEvent_ERROR); // Fatal error 
+        return(Status);
+    }
+
+    // set vendor ID 
+    LOG_MESSAGE(
+        "OtaConfig: call OTA_set EXTLIB_OTA_SET_OPT_VENDOR_ID, "
+        "VendorDir=%s\r\n",
+        OTA_VENDOR_DIR);
+    Status =
+        OTA_set(EXTLIB_OTA_SET_OPT_VENDOR_ID, strlen(
+                    OTA_VENDOR_DIR), (uint8_t *)OTA_VENDOR_DIR, 0);
+    if(Status < 0)
+    {
+        LOG_MESSAGE(
+            "OtaInit: ERROR from OTA_set EXTLIB_OTA_SET_OPT_VENDOR_ID."
+            "Status=%d\r\n",
+            Status);
+        SignalEvent(AppEvent_ERROR); // Fatal error 
+        return(Status);
+    }
+
+    SignalEvent(APP_EVENT_CONTINUE);
+    return(Status);
+}
+
+int32_t OtaCheckAndDoCommit()
+{
+    int32_t isPendingCommit;
+    int32_t isPendingCommit_len;
+    int32_t Status;
+
+    // At this stage we have fully connected to the network (IPv4_Acquired) //
+    // If the MCU image is under test, the ImageCommit process will 
+    // commit the new image and might reset the MCU //
+    Status =
+        OTA_get(EXTLIB_OTA_GET_OPT_IS_PENDING_COMMIT,
+                (int32_t *)&isPendingCommit_len,
+                (uint8_t *)&isPendingCommit);
+    if(Status < 0)
+    {
+        LOG_MESSAGE(
+            "OtaCheckDoCommit: OTA_get ERROR on "
+            "EXTLIB_OTA_GET_OPT_IS_PENDING_COMMIT, Status = %d\r\n",
+            Status);
+        SignalEvent(AppEvent_ERROR); // Fatal error //
+        return(0); // action in state machine - return 0 in order to process the
+        // APP_EVENT_ERROR //
+    }
+
+    // commit now because 1. the state is PENDING_COMMIT 2. there was successful
+    // wlan connection //
+    if(isPendingCommit)
+    {
+        Status = OTA_set(EXTLIB_OTA_SET_OPT_IMAGE_COMMIT, 0, NULL, 0);
+        if(Status < 0)
+        {
+            LOG_MESSAGE(
+                "OtaCheckDoCommit: OTA_set ERROR on "
+                "EXTLIB_OTA_SET_OPT_IMAGE_COMMIT, Status = %d\r\n",
+                Status);
+            SignalEvent(AppEvent_ERROR); // Can be in wrong state, ToDo - no error
+            return(0); // action in state machine - return 0 in order to process the APP_EVENT_ERROR //
+        }
+        LOG_MESSAGE("\r\n");
+        LOG_MESSAGE(
+            "OtaCheckDoCommit: OTA success, new image commited and "
+            "currently run\n");
+        LOG_MESSAGE("\r\n");
+        // Stop the commit WDT //
+        Platform_CommitWdtStop();
+    }
+    return(0);
+}
+
+int32_t OtaRunStep()
+{
+    int32_t Status;
+    Ota_optVersionsInfo VersionsInfo;
+    int32_t Optionlen;
+
+    Status = OTA_run();
+    switch(Status)
+    {
+    case OTA_RUN_STATUS_CONTINUE:
+        // continue calling Ota_run 
+        SignalEvent(APP_EVENT_CONTINUE);
+        break;
+
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_CONNECT_OTA_SERVER:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_RECV_APPEND:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_REQ_OTA_DIR:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_REQ_FILE_URL:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_CONNECT_FILE_SERVER:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_REQ_FILE_CONTENT:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_FILE_HDR:
+    case OTA_RUN_STATUS_CONTINUE_WARNING_FAILED_DOWNLOAD_AND_SAVE:
+        LOG_MESSAGE(
+            "OtaRunStep: WARNING Ota_run, Status=%d, continue for"
+            "next OTA retry\r\n",
+            Status);
+        LOG_MESSAGE("\r\n");
+        OtaCount_Warnings++;
+        // on warning, continue calling Ota_run for next retry 
+        SignalEvent(APP_EVENT_CONTINUE);
+        break;
+
+    case OTA_RUN_STATUS_NO_UPDATES:
+        // OTA will go back to IDLE and next Ota_run will restart the process 
+        LOG_MESSAGE("\r\n");
+        LOG_MESSAGE("OtaRunStep: status from Ota_run: no updates\r\n");
+        LOG_MESSAGE("\r\n");
+        SignalEvent(APP_EVENT_OTA_CHECK_DONE);
+        break;
+
+    case OTA_RUN_STATUS_CHECK_NEWER_VERSION:
+        // OTA find new version - in compare to ota.dat file version 
+        // host should decide if to use the new version or to ignore it 
+        LOG_MESSAGE(
+            "OtaRunStep: status from Ota_run: "
+            "OTA_RUN_STATUS_CHECK_NEWER_VERSION, accept and continue\r\n");
+        OTA_get(EXTLIB_OTA_GET_OPT_VERSIONS, (int32_t *)&Optionlen,
+                (uint8_t *)&VersionsInfo);
+        LOG_MESSAGE(
+            "OtaRunStep: CurrentVersion=%s, NewVersion=%s,"
+            " Start download ...\r\n",
+            VersionsInfo.CurrentVersion, VersionsInfo.NewVersion);
+
+        OTA_set(EXTLIB_OTA_SET_OPT_ACCEPT_UPDATE, 0, NULL, 0);
+        SignalEvent(APP_EVENT_CONTINUE);
+        break;
+
+    case OTA_RUN_STATUS_CHECK_OLDER_VERSION:
+        // OTA find old version - in compare to ota.dat file version 
+        // host should decide if to use this old version or to ignore it 
+        Optionlen = sizeof(Ota_optVersionsInfo);
+        LOG_MESSAGE("\r\n");
+        LOG_MESSAGE(
+            "OtaRunStep: status from Ota_run: "
+            "OTA_RUN_STATUS_CHECK_OLDER_VERSION \r\n");
+        LOG_MESSAGE("\r\n");
+#ifdef OTA_LOOP_TESTING
+        // just for loop testing  - ignore status OLDER_VERSION 
+        LOG_MESSAGE("OtaRunStep: ignore it just for loop testing\r\n");
+        OTA_set(EXTLIB_OTA_SET_OPT_ACCEPT_UPDATE, 0, NULL, 0);
+        SignalEvent(APP_EVENT_CONTINUE);
+#else
+        OTA_set(EXTLIB_OTA_SET_OPT_DECLINE_UPDATE, 0, NULL, 0);
+        SignalEvent(APP_EVENT_OTA_CHECK_DONE);
+#endif
+        break;
+
+    case OTA_RUN_STATUS_DOWNLOAD_DONE:
+        LOG_MESSAGE(
+            "OtaRunStep: status from Ota_run: Download done, status = %d\r\n",
+            Status);
+        OtaCount_Done++;
+        SignalEvent(APP_EVENT_OTA_DOWNLOAD_DONE);
+        break;
+        // 5 consecutive failures, must stop 
+    case OTA_RUN_ERROR_CONSECUTIVE_OTA_ERRORS:      
+#ifdef OTA_LOOP_TESTING
+        // just for loop testing  - ignore CONSECUTIVE_OTA_ERRORS 
+        LOG_MESSAGE("OtaRunStep: ignore it just for loop testing\r\n");
+        SignalEvent(AppEvent_RESTART);
+        break;
+#endif
+
+    case OTA_RUN_ERROR_NO_SERVER_NO_VENDOR:
+    case OTA_RUN_ERROR_UNEXPECTED_STATE:
+    case OTA_RUN_ERROR_SECURITY_ALERT:         // security alert, must stop 
+        OtaCount_Errors++;
+        // User could wait OTA period time and try maybe there is 
+        // good new version to download 
+        LOG_MESSAGE("\r\n");
+        LOG_MESSAGE(
+            "OtaRunStep: FATAL ERROR from "
+            "Ota_run %d !!!!!!!!!!!!!!!!!!!!!!!!!!!\r\n",
+            Status);
+        LOG_MESSAGE("\r\n");
+        SignalEvent(APP_EVENT_OTA_ERROR);
+        break;
+
+    default:
+        if(Status < 0)
+        {
+            LOG_MESSAGE(
+                "OtaRunStep: Unknown negative from Ota_run %d, halt!! \r\n",
+                Status);
+            SignalEvent(APP_EVENT_OTA_ERROR);
+        }
+        else
+        {
+            LOG_MESSAGE(
+                "OtaRunStep: Unknown positive status from "
+                "Ota_run %d, continue \r\n",
+                Status);
+            SignalEvent(APP_EVENT_CONTINUE);
+        }
+        break;
+    }
+
+    return(0);
+}
+
+int32_t OtaIsActive()
+{
+    int ProcActive;
+    int ProcActiveLen;
+
+    // check OTA process //
+    OTA_get(EXTLIB_OTA_GET_OPT_IS_ACTIVE, (int32_t *)&ProcActiveLen,
+            (uint8_t *)&ProcActive);
+
+    return(ProcActive);
+}
+
+int32_t OtaImageTestingAndReset()
+{
+    int32_t retVal;
+
+    //StopAsyncEvtTimer();
+    LOG_MESSAGE("\n\n\n\n");
+    LOG_MESSAGE("OtaImageTestingAndReset: download done\r\n");
+    LOG_MESSAGE(
+        "OtaImageTestingAndReset: call sl_Stop to move the bundle to"
+        "testing state\r\n");
+    sl_Stop(SL_STOP_TIMEOUT);
+    // sleep 5s to ensure network processing has stopped before reset
+    Platform_Sleep(5000);
+    LOG_MESSAGE(
+        "OtaImageTestingAndReset: reset the platform to test the new"
+        "image...\r\n");
+    Platform_Reset();
+    //powerShutdown(2000);
+
+    // if we reach here, the platform does not support self reset //
+    // reset the NWP in order to test the new image //
+    LOG_MESSAGE("\n");
+    LOG_MESSAGE(
+        "OtaImageTestingAndReset: platform does not support self reset\r\n");
+    LOG_MESSAGE(
+        "OtaImageTestingAndReset: reset the NWP to test the new image\r\n");
+    LOG_MESSAGE("\n");
+    retVal = InitSimplelink(ROLE_STA);
+    // The sl_Stop/Start will produce event APP_EVENT_STARTED //
+    return(retVal);
+}
+
+int32_t ProcessRestartMcu()
+{
+    LOG_MESSAGE("\n\n");
+    LOG_MESSAGE("ProcessRestartMcu: reset the platform...\r\n");
+    Platform_Reset();
+
+    // if we reach here, the platform does not support self reset //
+    // reset the NWP in order to rollback to the old image //
+    LOG_MESSAGE("\n");
+    LOG_MESSAGE("ProcessRestartMcu: platform does not support "
+    "self reset\r\n");
+    LOG_MESSAGE(
+        "ProcessRestartMcu: reset the NWP to rollback to the old image\r\n");
+    LOG_MESSAGE("\n");
+    ProcessRestartMCURequest();       // sl_Stop and sl_Start //
+    return(0);
+}
+
 //*****************************************************************************
 //
 //! \brief  Start the main task, initialize SimpleLink device
@@ -2140,6 +2740,8 @@ void * ProvisioningTask(void *arg)
             if (pEntry->p_evtHndl() < 0)
             {
                 LOG_MESSAGE("Event handler failed..!! current: %d event: %d \n\r", g_CurrentState, event);
+                Platform_Reset();
+                LOG_MESSAGE("Platform reset failed!! Hardware reset required!! \r\n");
                 while(1)
                 {
                     ;
@@ -2384,7 +2986,7 @@ void * mainThread( void *arg )
     /* Initial Terminal, and print Application name */
     InitTerm();
     InitTerm1();
-    //DisplayBanner(APPLICATION_NAME);
+    DisplayBanner(APPLICATION_NAME);
 
     /* Switch off all LEDs on boards */
     GPIO_write(Board_GPIO_LED0, Board_GPIO_LED_OFF);
@@ -2463,7 +3065,7 @@ void * mainThread( void *arg )
     }
 
     /* create the adc thread */
-    /*
+    
     pthread_attr_init(&pAttrs_adc);
     priParam.sched_priority = 1;
     RetVal = pthread_attr_setschedparam(&pAttrs_adc, &priParam);
@@ -2482,7 +3084,6 @@ void * mainThread( void *arg )
         // pthread_create() failed 
         while (1);
     }
-    */
 
     /* create the uart1 read thread */
     /*pthread_attr_init(&pAttrs_uart1);

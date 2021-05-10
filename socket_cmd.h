@@ -44,6 +44,7 @@
 #include "semaphore.h"
 #include "uart_term.h"
 
+#define APPLICATION_VERSION      (12.2f)
 #define BSD_SOCKET_ERROR        ( \
         "BSD Socket error, please refer \"BSD SOCKET ERRORS CODES\" section in errors.h")
 #define SL_SOCKET_ERROR         ( \
