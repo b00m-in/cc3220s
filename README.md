@@ -1,8 +1,3 @@
-Title: TI CC3220
-Category: manual
-Tags: hardware, software, tronix
-Date: 3rd November 2017
-Format: markdown
 
 ## Contents ##
 - [Brief](#brief)
@@ -30,7 +25,7 @@ Format: markdown
 - [References](#references)
 
 
-## [Brief](#brief){#brief}
+## [Brief](#brief)
 
 Notes on provisioning/adc/cloud-ota
 
@@ -41,24 +36,24 @@ Arm compiler at:
 ~/ti/ccsv8/ccsv8/tools/compiler/ti-cgt-arm_18.1.7.LTS/bin
 ```
 
-### [OOTB](#ootb){#ootb}
+### [OOTB](#ootb)
 
 swru473.pdf
 
-### [Errata](#errata){#errata}
+### [Errata](#errata)
 
 6.1.1 Provisioning: Provisioning mode is reflected by a flashing red LED (D10, not D7). 
 6.1.2 CC3220 as AP: AP mode is applied by pressing the SW3 (not SW2) switch on the CC3220 Launchpad.
 
-## [Download](#download){#download}
+## [Download](#download)
 
 + [Simplelink SDK]() 
 + [Uniflash]()
 + [CCStudio]()
 
-## [Components](#components){#components}
+## [Components](#components)
 
-### [Empty](#empty){#empty}
+### [Empty](#empty)
 
 Provisioning using external confirmation/feedback
 
@@ -73,7 +68,7 @@ sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_START_MODE_APSC, ROLE_AP, 600, NULL
 Can only use the above with `ROLE_STA` as second argument because it needs to be in station mode and connect to an external server to confirm connection. 
 
 
-### [Provisioning](#provisioning){#provisioning}
+### [Provisioning](#provisioning)
 
 Each of 7 states has 12 event handlers (function pointers) and corresponding next state defined by lookup/transition table `const Provisioning_TableEntry_t gTransitionTable[7][12]` 
 
@@ -174,7 +169,7 @@ Both `ProvisioningTask & adcThread` create timers using sigevent.
 
 The `adcThread` also blocks on a semaphore which gets posted to when the timer expires.
 
-### [MOV](#mov){#mov}
+### [MOV](#mov)
 
 The SPD that the CC3220S will connect has a mechanical relay that gets triggered when the thermal fuse burns out. So the normally open (NO) becomes closed and the normally closed (NC) becomes open. 
 
@@ -184,7 +179,7 @@ When the thermal fuse burns out and NO is now closed, the transistor conducts an
 
 The output of the comparator can be fed to either the ADC or GPIO of the CC3220S. 
 
-### [ADC](#adc){#adc}
+### [ADC](#adc)
 
 ADC0 = pin 59
 ADC1 = pin 60
@@ -193,9 +188,9 @@ The ADC is designed to be connected to the NC pin on the SPD (with COM on SPD sh
 
 Pin 59 (GPIO04 module pin 49) is ADC_CH2. On the custom CC3220MODAS board it's connected to ANA_IN3. But on pwrcon_1 the analog input from the continuity circuit lines up with ANA_IN2. So short ANA_IN2 & ANA_IN3 and leave ANA_IN2 unconnected (don't populate the 0 resistor). 
 
-### [Networking](#networking){#networking}
+### [Networking](#networking)
 
-#### [Wifi](#wifi){#wifi}
+#### [Wifi](#wifi)
 
 When starting with the `empty` project and adding in Simplelink, add the `Library Path` and library`ccs/rtos/simplelink.a` in the project properties in C/C++ General -> Paths and Symbols. 
 
@@ -219,7 +214,7 @@ Flags: Optional configuration conducted by a bitmap.
 
 Example usage: `retVal = sl_WlanProvisioning(provisioningCmd, ROLE_STA, PROVISIONING_INACTIVITY_TIMEOUT, NULL, SL_WLAN_PROVISIONING_CMD_FLAG_EXTERNAL_CONFIRMATION)`
 
-#### [sntp](#sntp){#sntp}
+#### [sntp](#sntp)
 
 As per the problem related in [sntp], the service pack needs to be included while using Uniflash to flash the image otherwise a -202 (sntp module error) is encountered.
 
@@ -234,13 +229,13 @@ SlDateTime_t dateTime = {0};
 dateTime.tm_mon = netTime.tm_mon + 1; // but SlDateTime's months run from 1->12
 ```
 
-### [Modbus](#modbus){#modbus}
+### [Modbus](#modbus)
 
 ```
 github.com/Jacajack/liblightmodbus
 ```
 
-### [Cloud-OTA](#cloud-ota){#cloud-ota}
+### [Cloud-OTA](#cloud-ota)
 
 In the TI cloud-ota example each of 8 states has 12 event handlers (function pointers) and corresponding next state defined by lookup/transition table `const s_TableEntry gTransitionTable[8][17]` 
 
@@ -312,7 +307,7 @@ static int32_t StopAsyncEvtTimer();
 static int32_t ProcessRestartRequest();
 ```
 
-### [Combined](#combined){#combined}
+### [Combined](#combined)
 ------------------
 
 8 AppState(s): ignoring MAX
@@ -459,7 +454,7 @@ time(&rawtime); // time(NULL);
 rawtime = mktime(timeinfo);
 ```
 
-### [Networking](#networking){#networking}
+### [Networking](#networking)
 
 + source/ti/driver/net/wifi/errors.h
 
@@ -509,7 +504,7 @@ Standard bus frequencies are 100/400KHz
 ## BIOS Kernel
 
 
-## [Power](#power){#power}
+## [Power](#power)
 
 The board can be powered from an external power supply (i.e. not USB) using the instructions in section 2.5.2 in SWRU463.pdf (Simplelink CC3220 Wi-Fi LaunchPad Development Kit Hardware). 
 
@@ -519,7 +514,7 @@ The board can be powered from an external power supply (i.e. not USB) using the 
 
 The UART can still be used via USB to monitor output from the board even though the USB is not providing the power to the board. 
 
-## [Layout](#layout){#layout}
+## [Layout](#layout)
 
 The following GPIO ports were left unconnected due to space constraints on board:
 ```
@@ -543,7 +538,7 @@ Pin08 GPIO17 UART1_RX <-> Pin08
 ~/ti/ccsv8/simplelink_cc32xx_sdk_3_10_00_04/source/ti/boards/CC3220S_LAUNCHXL/CC3220S_LAUNCHXL.c
 .rxPin = UARTCC32XX_PIN_08_UART1_RX --> .rxPin = UARTCC32XX_PIN_45_UART1_RX
 
-## [Gotchas](#gotchas){#gotchas}
+## [Gotchas](#gotchas)
 
 Operation failed: fs_programming error: ret: -10289, ex_err: 2633 - FS_WRONG_SIGNATURE
 Operation failed: fs_programming error: ret: -10287, ex_err: 2633 - FS_ERR_ROOT_CA_IS_UNKOWN
