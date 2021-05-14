@@ -1393,7 +1393,7 @@ static int32_t ProcessRestartMCURequest()
     s_AppContext *const pCtx = &gAppCtx;
     int32_t retVal = -1;
 
-    retVal = RestartSimplelink(pCtx->role);
+    retVal = RestartSimplelink(ROLE_STA);//pCtx->role);
     ASSERT_ON_ERROR(retVal);
 
     return(retVal);
@@ -1421,6 +1421,7 @@ static int32_t InitSimplelink(uint8_t const role)
 
     pCtx->role = role;
     pCtx->currentState = AppState_STARTING;
+    g_CurrentState = AppState_STARTING;
     pCtx->pendingEvents = 0;
 
     if((retVal = sl_Start(0, 0, 0)) == SL_ERROR_RESTORE_IMAGE_COMPLETE)
@@ -1455,7 +1456,7 @@ static int32_t InitSimplelink(uint8_t const role)
             }
 
             // Find Next event entry   
-            pEntry = (Provisioning_TableEntry_t *)&gTransitionTable[pCtx->currentState][event];
+            pEntry = (Provisioning_TableEntry_t *)&gTransitionTable[g_CurrentState][event];
 
             if(NULL != pEntry->p_evtHndl)
             {
@@ -1473,6 +1474,10 @@ static int32_t InitSimplelink(uint8_t const role)
             if(pEntry->nextState != pCtx->currentState)
             {
                 pCtx->currentState = pEntry->nextState;
+            }
+            if (pEntry->nextState != g_CurrentState)
+            {
+                g_CurrentState = pEntry->nextState;
             }
         }
 
@@ -1712,6 +1717,7 @@ int32_t HandleProvisioningComplete(void)
 //*****************************************************************************
 int32_t SendPingToGW(void)
 {
+    OtaCheckAndDoCommit();
     LOG_MESSAGE("[App] SendingPingtoGW %d \r\n", g_CurrentState);
     /*if(restart) {
         restart = false;

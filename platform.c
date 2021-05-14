@@ -119,6 +119,7 @@ void Platform_Reset()
 #endif
 }
 
+/*
 void powerShutdown(uint32_t shutdownTime)
 {
 #ifdef CC32XX
@@ -132,12 +133,12 @@ void powerShutdown(uint32_t shutdownTime)
                          (uintptr_t)NULL);
     if(shutdownTime != MAX_INT)
     {
-        /* config gpio to wakeup from hib */
+        // config gpio to wakeup from hib 
     }
-    /*
-     *    PowerMSP432_SHUTDOWN_0 => PCM_LPM35_VCORE0
-     *    PowerMSP432_SHUTDOWN_1 => PCM_LPM45
-     */
+    //
+     //   PowerMSP432_SHUTDOWN_0 => PCM_LPM35_VCORE0
+     //   PowerMSP432_SHUTDOWN_1 => PCM_LPM45
+     //
     Power_shutdown(PowerMSP432_SHUTDOWN_0,0);
 #else
     if(shutdownTime != MAX_INT)
@@ -155,7 +156,7 @@ void powerShutdown(uint32_t shutdownTime)
                          (uintptr_t)NULL);
     Power_shutdown(0,shutdownTime);
 #endif
-}
+}*/
 
 //*****************************************************************************
 //
