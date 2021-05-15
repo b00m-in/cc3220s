@@ -1,8 +1,13 @@
-
 ## Contents ##
 - [Brief](#brief)
     - [OOTB](#ootb)
     - [Errata](#err)
+    - [Demos](#demos)
+        - [OOB](#oob)
+        - [Drivers](#drivers)
+        - [GPIO](#gpio)
+        - [PWM](#pwm)
+        - [I2C](#i2c)
 - [Download](#brief)
 - [Components](#components)
     - [Empty](#empty)
@@ -17,17 +22,19 @@
     - [Combined](#combined)
 - [Minicom](#minicom)
 - [Uniflash](#uniflash)
+    - [Gotchas](#uniflash-gotchas)
 - [Power](#power)
 - [Layout](#layout)
+    - [Todos](#layout-todos)
 - [Gotchas](#gotchas)
 - [Todo](#todo)
 - [Manual](#manual)
 - [References](#references)
-
+- [Scratchpad](#scratchpad)
 
 ## [Brief](#brief)
 
-Notes on provisioning/adc/cloud-ota
+Notes on provisioning/adc/cloud-ota for CC3220S devices. 
 
 `TI_RTOS` is bundled in `Simplelink SDK`. No need to download separately.
 
@@ -45,11 +52,39 @@ swru473.pdf
 6.1.1 Provisioning: Provisioning mode is reflected by a flashing red LED (D10, not D7). 
 6.1.2 CC3220 as AP: AP mode is applied by pressing the SW3 (not SW2) switch on the CC3220 Launchpad.
 
+### [Demos](#demos)
+
+wlanconnect -s "M0V" -t WPA/WPA2 -p "53606808"
+send -c 192.168.1.100 -n 1
+
+#### [OOB](#oob)
+
+provisioningTask
+linkLocalTask: 
+controlTask: handles button presses etc.
+otaTask
+
+#### [Drivers](#drivers)
+
+#### [GPIO](#gpio)
+
+#### [PWM](#pwm)
+
+System clock 80MHz
+Timer tick = 1/80Mhz = 12.5ns
+16 bit registers + 8 bit prescalar
+Maximum tick = 2^24-1 = 16777215 
+Max time = (2^24-1) x 12.5ns = 0.209715s
+
+#### [I2C](#i2c)
+
+Standard bus frequencies are 100/400KHz
+
 ## [Download](#download)
 
-+ [Simplelink SDK]() 
-+ [Uniflash]()
-+ [CCStudio]()
++ [Simplelink SDK](https://www.ti.com/tool/SIMPLELINK-CC32XX-SDK) 
++ [Uniflash](https://www.ti.com/tool/UNIFLASH)
++ [CCStudio](https://www.ti.com/design-resources/embedded-development/ccs-development-tools.html)
 
 ## [Components](#components)
 
@@ -64,9 +99,7 @@ To use a cloud-based feedback, the external confirmation bit should be set in th
 ```
 sl_WlanProvisioning(SL_WLAN_PROVISIONING_CMD_START_MODE_APSC, ROLE_AP, 600, NULL, SL_WLAN_PROVISIONING_CMD_FLAG_EXTERNAL_CONFIRMATION);
 ```
-
 Can only use the above with `ROLE_STA` as second argument because it needs to be in station mode and connect to an external server to confirm connection. 
-
 
 ### [Provisioning](#provisioning)
 
@@ -214,6 +247,8 @@ Flags: Optional configuration conducted by a bitmap.
 
 Example usage: `retVal = sl_WlanProvisioning(provisioningCmd, ROLE_STA, PROVISIONING_INACTIVITY_TIMEOUT, NULL, SL_WLAN_PROVISIONING_CMD_FLAG_EXTERNAL_CONFIRMATION)`
 
++ source/ti/driver/net/wifi/errors.h
+
 #### [sntp](#sntp)
 
 As per the problem related in [sntp], the service pack needs to be included while using Uniflash to flash the image otherwise a -202 (sntp module error) is encountered.
@@ -307,8 +342,15 @@ static int32_t StopAsyncEvtTimer();
 static int32_t ProcessRestartRequest();
 ```
 
+The next section (combined) details how the above example has been incorporated into the B00MIN app.
+
 ### [Combined](#combined)
 ------------------
+Once connected to the broker and sending data, B00MIN devices receive a version number as response to every packet sent to the broker. When this version number is greater than the version of the application running on the device, an OTA update is initiated on the device.
+
+Firstly a new image is downloaded from the image server. Once the download is completed, if all checks are OK, the image is committed and run after the device resets itself. If there are errors the image is rolled back and the previous image continues running. Once committed, it's not possible to roll-back to the previous image. 
+
+The following modified state machine is utilised:  
 
 8 AppState(s): ignoring MAX
 ```
@@ -383,7 +425,21 @@ int32_t OtaRunStep();                          // ORS  <---
 int32_t StartAsyncEvtTimer();                  // SET
 ```
 
-## minicom ##
+As stated in section on provisioning, once provisioning is successful, the normal state machine flow is:
+```
+S3->E9->SPG->S3->E9 ... repeat
+```
+So rather than repeat in this loop, once a version number greater than the current application version is received, an OTA_START event is used to call the OtaInit() which then uses
+```
+S3->E12->OI->S6->E13->ORS->S6->E13->ORS->S6...->E15->OIT->PRCMHibernateCycleTrigger()
+```
+`PRCMHibernateCycleTrigger()` causes a self-reset and the device restarts in STA mode in S3 which then falls back in to the usual cycle:
+```
+S3->E9->SPG->S3->E9 ... repeat
+```
+OtaCheckAndDoCommit() must be called after a reset following an OTA. To accomodate this, on every call to SPG, an OtaCheckAndDoCommit() is performed. If no commit is pending, it just returns immidiately so not an expensive call.  
+
+## [Minicom](#minicom) 
 
 minicom -b 115200 -8 -D /dev/ttyACM0
 
@@ -391,33 +447,7 @@ To run minicom as a non-root user, user has to be part of dialout group.
 
 Also for CC3200, user has to be added to plugdev group. 
 
-## openocd
-
-cd ~/ti/cc3200_sdk_1_3_0/CC3200SDK_1.3.0/cc3200-sdk/tools/gcc_scripts
-openocd -f cc3200.cfg
-
-Open On-Chip Debugger 0.9.0 (2015-09-02-10:42)
-Licensed under GNU GPL v2
-For bug reports, read
-  http://openocd.org/doc/doxygen/bugs.html
-adapter speed: 1000 kHz
-Info : auto-selecting first available session transport "jtag". To override use 'transport select <transport>'.
-cc3200_dbginit
-Info : clock speed 1000 kHz
-Info : JTAG tap: cc3200.jrc tap/device found: 0x0b97c02f (mfg: 0x017, part: 0xb97c, ver: 0x0)
-Info : JTAG tap: cc3200.dap enabled
-Info : cc3200.cpu: hardware has 6 breakpoints, 4 watchpoints
-
-## cc3200
-
-cc3200_sdk_1_3_0/CC3200SDK_1.3.0/tools/gcc_scripts/makedefs_ti_rtos
-cc3200_sdk_1_3_0/CC3200SDK_1.3.0/ti_rtos/ti_rtos_config/gcc/configPkg/compiler.opt
-cc3200_sdk_1_3_0/CC3200SDK_1.3.0/oslib/gcc/Makefile_oslib_tirtos
-
-malloc (nbytes=76) at ../../../../../../newlib/libc/stdlib/malloc.c:215
-215 ../../../../../../newlib/libc/stdlib/malloc.c: No such file or directory.
-
-## Uniflash
+## [Uniflash](#uniflash)
 
 + [Product page](http://www.ti.com/tool/Uniflash)
 + [Download](http://processors.wiki.ti.com/index.php/Category:CCS_UniFlash)
@@ -435,7 +465,7 @@ cd /opt/ti/uniflash_4.6.0
 sudo ./node-webkit/nw
 ```
 
-### Uniflash Gotchas
+#### [Gotchas](#uniflash-gotchas)
 
 
 In client mode (`TCPClient` in `socket_cmd.c`) if verifying server certificate like so:
@@ -454,11 +484,8 @@ time(&rawtime); // time(NULL);
 rawtime = mktime(timeinfo);
 ```
 
-### [Networking](#networking)
 
-+ source/ti/driver/net/wifi/errors.h
-
-##TIRTOS
+## [TIRTOS](#tirtos)
 
 ~/ti/tirtos_simplelink_2_13_01_09
 
@@ -473,33 +500,6 @@ TIRTOS can be rebuit after changing Windows paths to Linux paths in tirtos.mak:
 
 Also can choose compiler/linker options (CCS, GCC or IAR) in tirtos.mak
 
-## Demos
-
-wlanconnect -s "M0V" -t WPA/WPA2 -p "53606808"
-send -c 192.168.1.100 -n 1
-
-## OOB
-
-provisioningTask
-linkLocalTask: 
-controlTask: handles button presses etc.
-otaTask
-
-## Drivers
-
-### GPIO
-
-### PWM
-
-System clock 80MHz
-Timer tick = 1/80Mhz = 12.5ns
-16 bit registers + 8 bit prescalar
-Maximum tick = 2^24-1 = 16777215 
-Max time = (2^24-1) x 12.5ns = 0.209715s
-
-### I2C
-
-Standard bus frequencies are 100/400KHz
 
 ## BIOS Kernel
 
@@ -538,6 +538,12 @@ Pin08 GPIO17 UART1_RX <-> Pin08
 ~/ti/ccsv8/simplelink_cc32xx_sdk_3_10_00_04/source/ti/boards/CC3220S_LAUNCHXL/CC3220S_LAUNCHXL.c
 .rxPin = UARTCC32XX_PIN_08_UART1_RX --> .rxPin = UARTCC32XX_PIN_45_UART1_RX
 
+### [Todos](#layout-todos)
+
+Add hardware reset button
+
+Reroute P62_GPIO_07 / J1 (pad 5)  --->  J2 (pad 3) which connects to RS485_EN on pwrcon_1
+
 ## [Gotchas](#gotchas)
 
 Operation failed: fs_programming error: ret: -10289, ex_err: 2633 - FS_WRONG_SIGNATURE
@@ -570,7 +576,7 @@ int32_t SendPingToGW(void) {
 }
 ```
 
-## [Manual](#manual){#manual}
+## [Manual](#manual)
 
 Provisioning LED sequence on custom CC3220MODASF:
 
@@ -583,7 +589,7 @@ Green LED (D8) flashes briefly when data is sent to the server
 VBAT & VBRD need to be jumped in production on the custom CC3220MODASF
 
 
-## References ## 
+## [References](#references)
 + [](https://www.embedded.com/electronics-blogs/say-what-/4441829/2/Your-very-own-IoT--Digging-deep-on-sensors)
 + [Simplelink SDK](http://www.ti.com/tool/SIMPLELINK-CC32XX-SDK) 
 + [Simplelink SDK Download](http://www.ti.com/tool/download/SIMPLELINK-CC32XX-SDK)
@@ -592,10 +598,10 @@ VBAT & VBRD need to be jumped in production on the custom CC3220MODASF
 + [SYS/BIOS Downloads](http://software-dl.ti.com/dsps/dsps_public_sw/sdo_sb/targetcontent/bios/sysbios/index.html)
 + [TI-RTOS](http://software-dl.ti.com/dsps/dsps_public_sw/sdo_sb/targetcontent/tirtos/index.html)
 + [CC3x20 Simplelink Wi-Fi IoC Solution Device Provisioning (Rev. A)](swra513a.pdf)
-
-## [Useful](#useful){#useful}
 + [tls certs](https://gist.github.com/laher/5795578)
 + [sntp](https://e2e.ti.com/support/wireless-connectivity/wifi/f/968/t/829406?tisearch=e2e-quicksearch&keymatch=sntp)
+
+## [Scratchpad](#scratch)
 
 dummy-root-ca-cert
 dummy-trusted-ca-cert
